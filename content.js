@@ -18,12 +18,20 @@
   const ATTENDEE_PLACEHOLDERS = ["Invite attendees", "出席者を追加"];
   const IGNORE_CALENDAR_NAMES = new Set(["Calendar", "Birthdays", "Japan holidays"]);
   const ATTENDEE_AUTOFILL_ATTR = "data-oce-attendees-filled";
+  const ATTENDEE_AUTOFILLING_ATTR = "data-oce-attendees-filling";
   const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+  const RECENT_INPUT_TTL_MS = 20000;
 
   const state = {
     active: false,
     lastRunAt: 0,
-    selfEmail: ""
+    selfEmail: "",
+    lastAutofillKey: "",
+    lastAutofillAt: 0,
+    autofillRuns: 0,
+    autofillSkips: 0,
+    autofillLastInputs: [],
+    recentInputs: new Map()
   };
 
   const showToast = (message) => {
@@ -61,17 +69,34 @@
     );
   };
 
-  const normalizeText = (value) => value.replace(/\s+/g, " ").trim();
-  const normalizeEmail = (value) => value.trim().toLowerCase();
-  const isEmailInput = (value) => value.includes("@");
   const stripInvisible = (value) =>
     value.replace(/[\s\u200B\u200C\u200D\uFEFF]/g, "");
   const isEffectivelyEmpty = (value) => stripInvisible(value).length === 0;
+  const normalizeText = (value) =>
+    stripInvisible(value).replace(/\s+/g, " ").trim();
+  const normalizeEmail = (value) => value.trim().toLowerCase();
+  const isEmailInput = (value) => value.includes("@");
 
   const sleep = (ms) =>
     new Promise((resolve) => {
       window.setTimeout(resolve, ms);
     });
+
+  const pruneRecentInputs = () => {
+    const now = Date.now();
+    [...state.recentInputs.entries()].forEach(([key, timestamp]) => {
+      if (now - timestamp > RECENT_INPUT_TTL_MS) state.recentInputs.delete(key);
+    });
+  };
+
+  const wasRecentlyInserted = (key) => {
+    pruneRecentInputs();
+    return state.recentInputs.has(key);
+  };
+
+  const markInserted = (key) => {
+    state.recentInputs.set(key, Date.now());
+  };
 
   const isVisible = (el) =>
     !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
@@ -116,13 +141,20 @@
         ...doc.querySelectorAll("button[role=\"option\"][aria-selected=\"true\"]")
       );
     });
+    const seen = new Set();
     return selected
       .map((button) => {
         const label = button.querySelector(".ATH58");
         const raw = label ? label.textContent : button.textContent;
         return raw ? normalizeText(raw) : "";
       })
-      .filter((name) => name && !IGNORE_CALENDAR_NAMES.has(name));
+      .filter((name) => name && !IGNORE_CALENDAR_NAMES.has(name))
+      .filter((name) => {
+        const key = normalizeText(name);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
   };
 
   const getEditorPillLabels = (editor) => {
@@ -369,6 +401,23 @@
     return false;
   };
 
+  const waitForPillInsert = async (editor, beforeCount, input, timeoutMs = 2000) => {
+    const normalizedInput = isEmailInput(input)
+      ? normalizeEmail(input)
+      : normalizeText(input);
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const currentCount = editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length;
+      if (currentCount > beforeCount) return true;
+      if (!isEmailInput(input)) {
+        const labels = getEditorPillLabels(editor);
+        if (labels.has(normalizedInput)) return true;
+      }
+      await sleep(80);
+    }
+    return false;
+  };
+
   const attemptDirectEmailCommit = async (editor, email, beforeCount) => {
     clearEditorInputText(editor);
     appendText(editor, email);
@@ -378,7 +427,7 @@
     commitEditor(editor);
     editor.blur();
     editor.dispatchEvent(new Event("focusout", { bubbles: true }));
-    const inserted = await waitForPillIncrease(editor, beforeCount, 2500);
+    const inserted = await waitForPillInsert(editor, beforeCount, email, 2500);
     if (inserted) {
       clearEditorInputText(editor);
       return true;
@@ -393,7 +442,7 @@
     const match = await waitForExactSuggestion(name, editor, isEmailInput(name) ? 3000 : 2000);
     if (match) {
       match.click();
-      const inserted = await waitForPillIncrease(editor, beforeCount);
+      const inserted = await waitForPillInsert(editor, beforeCount, name, 2500);
       clearEditorInputText(editor);
       return inserted;
     }
@@ -402,7 +451,7 @@
       const inserted = await attemptDirectEmailCommit(editor, name, beforeCount);
       if (inserted) return true;
       await commitByArrowEnter(editor);
-      return await waitForPillIncrease(editor, beforeCount, 2500);
+      return await waitForPillInsert(editor, beforeCount, name, 2500);
     }
 
     clearEditor(editor);
@@ -410,8 +459,19 @@
     return false;
   };
 
+  const buildAutofillKey = (inputs) => {
+    const normalized = inputs
+      .map((input) =>
+        isEmailInput(input) ? normalizeEmail(input) : normalizeText(input)
+      )
+      .filter(Boolean)
+      .sort();
+    return normalized.join("|");
+  };
+
   const fillAttendees = async (editor) => {
     if (!editor || editor.getAttribute(ATTENDEE_AUTOFILL_ATTR) === "true") return;
+    if (editor.getAttribute(ATTENDEE_AUTOFILLING_ATTR) === "true") return;
     const hasPills =
       editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length > 0;
     const hasText = !isEffectivelyEmpty(editor.textContent || "");
@@ -423,19 +483,39 @@
     if (selfEmail) inputs.push(selfEmail);
     if (inputs.length === 0) return;
 
+    const autofillKey = buildAutofillKey(inputs);
+    const now = Date.now();
+    if (state.lastAutofillKey === autofillKey && now - state.lastAutofillAt < 8000) {
+      state.autofillSkips += 1;
+      return;
+    }
+
+    state.lastAutofillKey = autofillKey;
+    state.lastAutofillAt = now;
+    state.autofillRuns += 1;
+    state.autofillLastInputs = inputs.slice(0, 10);
     editor.setAttribute(ATTENDEE_AUTOFILL_ATTR, "true");
+    editor.setAttribute(ATTENDEE_AUTOFILLING_ATTR, "true");
 
     const existing = getEditorPillLabels(editor);
     const seen = new Set();
 
-    for (const input of inputs) {
-      const key = isEmailInput(input) ? normalizeEmail(input) : normalizeText(input);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (!isEmailInput(input) && existing.has(key)) continue;
-      await addAttendeeByName(editor, input);
-      if (!isEmailInput(input)) existing.add(key);
-      await sleep(120);
+    try {
+      for (const input of inputs) {
+        const key = isEmailInput(input) ? normalizeEmail(input) : normalizeText(input);
+        if (wasRecentlyInserted(key)) continue;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (!isEmailInput(input) && existing.has(key)) continue;
+        const inserted = await addAttendeeByName(editor, input);
+        if (inserted) {
+          markInserted(key);
+          if (!isEmailInput(input)) existing.add(key);
+        }
+        await sleep(120);
+      }
+    } finally {
+      editor.removeAttribute(ATTENDEE_AUTOFILLING_ATTR);
     }
   };
 
@@ -489,6 +569,13 @@
       topLevel: window.top === window,
       readyState: document.readyState,
       selfEmail: ensureSelfEmail(document),
+      autofillRuns: state.autofillRuns,
+      autofillSkips: state.autofillSkips,
+      lastAutofillKey: state.lastAutofillKey,
+      lastAutofillAt: state.lastAutofillAt,
+      recentInputsCount: state.recentInputs.size,
+      recentInputsSample: [...state.recentInputs.keys()].slice(0, 10),
+      lastAutofillInputs: state.autofillLastInputs,
       selectedNames: getSelectedCalendarNames(),
       editorCount: editors.length,
       editorSummaries,
