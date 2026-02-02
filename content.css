@@ -1,0 +1,55 @@
+:root {
+  --oce-accent: #d13438;
+  --oce-accent-strong: #a4262c;
+  --oce-bg: #ffffff;
+  --oce-text: #1b1a19;
+}
+
+#oce-conflict-button {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 2147483647;
+  border: 1px solid var(--oce-accent-strong);
+  background: var(--oce-accent);
+  color: #ffffff;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+
+#oce-conflict-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+}
+
+#oce-conflict-button[data-active="true"] {
+  background: var(--oce-bg);
+  color: var(--oce-text);
+  border-color: var(--oce-accent);
+}
+
+#oce-conflict-toast {
+  position: fixed;
+  top: 54px;
+  right: 16px;
+  z-index: 2147483647;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--oce-text);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-left: 3px solid var(--oce-accent);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+.oce-conflict {
+  outline: 2px dashed #ffb900;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px rgba(255, 185, 0, 0.3);
+}

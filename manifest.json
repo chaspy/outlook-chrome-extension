@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "outlook chrome extension",
+  "version": "0.1.0",
+  "description": "Detect overlapping events in Outlook Web calendar.",
+  "permissions": ["activeTab"],
+  "host_permissions": [
+    "https://outlook.office.com/*",
+    "https://outlook.office365.com/*",
+    "https://outlook.live.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://outlook.office.com/*",
+        "https://outlook.office365.com/*",
+        "https://outlook.live.com/*"
+      ],
+      "all_frames": true,
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Detect Conflicts"
+  }
+}
