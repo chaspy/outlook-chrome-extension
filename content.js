@@ -15,6 +15,9 @@
     /^辞退:/
   ];
   const IGNORE_STATUS_PATTERNS = [/,\s*Free\b/i, /,\s*空き\b/, /,\s*空き時間\b/];
+  const ATTENDEE_PLACEHOLDERS = ["Invite attendees", "出席者を追加"];
+  const IGNORE_CALENDAR_NAMES = new Set(["Calendar", "Birthdays", "Japan holidays"]);
+  const ATTENDEE_AUTOFILL_ATTR = "data-oce-attendees-filled";
 
   const state = {
     active: false,
@@ -54,6 +57,215 @@
       IGNORE_LABEL_PATTERNS.some((pattern) => pattern.test(label)) ||
       IGNORE_STATUS_PATTERNS.some((pattern) => pattern.test(label))
     );
+  };
+
+  const normalizeText = (value) => value.replace(/\s+/g, " ").trim();
+
+  const sleep = (ms) =>
+    new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+
+  const isVisible = (el) =>
+    !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+
+  const getSelectedCalendarNames = () => {
+    const selected = [...document.querySelectorAll("button[role=\"option\"][aria-selected=\"true\"]")];
+    return selected
+      .map((button) => {
+        const label = button.querySelector(".ATH58");
+        const raw = label ? label.textContent : button.textContent;
+        return raw ? normalizeText(raw) : "";
+      })
+      .filter((name) => name && !IGNORE_CALENDAR_NAMES.has(name));
+  };
+
+  const getAttendeeEditors = () => {
+    const editors = [
+      ...document.querySelectorAll("[data-placeholder][contenteditable=\"true\"]")
+    ];
+    return editors.filter((editor) => {
+      const placeholder = editor.getAttribute("data-placeholder") || "";
+      return ATTENDEE_PLACEHOLDERS.includes(placeholder);
+    });
+  };
+
+  const findSuggestionItems = () => {
+    const items = [
+      ...document.querySelectorAll(
+        "[role=\"option\"][aria-label], [data-automationid=\"suggestionItem\"], .ms-Suggestions-item"
+      )
+    ];
+    return items.filter(isVisible);
+  };
+
+  const extractSuggestionName = (item) => {
+    const aria = item.getAttribute("aria-label") || "";
+    if (aria) {
+      const parts = aria.split(/\s[-–]\s/);
+      if (parts.length > 0) return normalizeText(parts[0]);
+    }
+
+    const personaPrimary =
+      item.querySelector(".ms-Persona-primaryText") ||
+      item.querySelector("[data-automationid=\"PersonaPrimaryText\"]");
+    if (personaPrimary) return normalizeText(personaPrimary.textContent || "");
+
+    const firstSpan = item.querySelector("span");
+    if (firstSpan) return normalizeText(firstSpan.textContent || "");
+
+    return normalizeText(item.textContent || "");
+  };
+
+  const extractEmailFromSuggestion = (item) => {
+    const aria = item.getAttribute("aria-label") || "";
+    if (aria) {
+      const parts = aria.split(/\s[-–]\s/);
+      if (parts.length > 1) {
+        const candidate = parts.slice(1).join(" - ");
+        if (candidate.includes("@")) return normalizeText(candidate);
+      }
+    }
+
+    const emailSpan = [...item.querySelectorAll("span")].find((span) =>
+      (span.textContent || "").includes("@")
+    );
+    if (emailSpan) return normalizeText(emailSpan.textContent || "");
+
+    const text = item.textContent || "";
+    const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i);
+    return match ? match[0] : "";
+  };
+
+  const findExactSuggestionMatch = (name) => {
+    const normalizedName = normalizeText(name);
+    const items = findSuggestionItems();
+    for (const item of items) {
+      if (extractSuggestionName(item) === normalizedName) {
+        return item;
+      }
+    }
+    return null;
+  };
+
+  const waitForExactSuggestion = async (name, timeoutMs = 1600) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const match = findExactSuggestionMatch(name);
+      if (match) return match;
+      await sleep(80);
+    }
+    return null;
+  };
+
+  const clearEditor = (editor) => {
+    editor.textContent = "";
+    editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  };
+
+  const placeCaretAtEnd = (editor) => {
+    editor.focus();
+    const selection = window.getSelection();
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
+
+  const clearEditorInputText = (editor) => {
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    const toRemove = [];
+    let node = walker.nextNode();
+    while (node) {
+      const parent = node.parentElement;
+      if (!parent || !parent.closest("._EType_RECIPIENT_ENTITY")) {
+        toRemove.push(node);
+      }
+      node = walker.nextNode();
+    }
+    toRemove.forEach((textNode) => textNode.remove());
+    editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  };
+
+  const insertText = (editor, text) => {
+    clearEditorInputText(editor);
+    placeCaretAtEnd(editor);
+    if (document.queryCommandSupported && document.queryCommandSupported("insertText")) {
+      document.execCommand("insertText", false, text);
+    } else {
+      editor.textContent += text;
+    }
+    editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  };
+
+  const commitEditor = (editor) => {
+    const events = [
+      { key: "Enter", code: "Enter", keyCode: 13, which: 13 },
+      { key: "Tab", code: "Tab", keyCode: 9, which: 9 }
+    ];
+    events.forEach((eventInit) => {
+      editor.dispatchEvent(
+        new KeyboardEvent("keydown", { ...eventInit, bubbles: true, cancelable: true })
+      );
+      editor.dispatchEvent(
+        new KeyboardEvent("keyup", { ...eventInit, bubbles: true, cancelable: true })
+      );
+    });
+    editor.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  const addAttendeeByName = async (editor, name) => {
+    insertText(editor, name);
+    const match = await waitForExactSuggestion(name);
+    if (match) {
+      match.click();
+      const start = Date.now();
+      while (Date.now() - start < 1500) {
+        const pill = editor.querySelector("._EType_RECIPIENT_ENTITY[aria-label]");
+        if (pill && normalizeText(pill.getAttribute("aria-label") || "") === name) {
+          clearEditorInputText(editor);
+          return true;
+        }
+        await sleep(80);
+      }
+      clearEditorInputText(editor);
+      return false;
+    }
+    clearEditor(editor);
+    await sleep(80);
+    return false;
+  };
+
+  const fillAttendees = async (editor) => {
+    if (!editor || editor.getAttribute(ATTENDEE_AUTOFILL_ATTR) === "true") return;
+    if (normalizeText(editor.textContent || "") !== "") return;
+
+    const names = getSelectedCalendarNames();
+    if (names.length === 0) return;
+
+    editor.setAttribute(ATTENDEE_AUTOFILL_ATTR, "true");
+
+    const seen = new Set();
+    for (const name of names) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      await addAttendeeByName(editor, name);
+      await sleep(120);
+    }
+  };
+
+  const maybeAutofillAttendees = () => {
+    const editors = getAttendeeEditors();
+    editors.forEach((editor) => {
+      if (editor.getAttribute(ATTENDEE_AUTOFILL_ATTR) === "true") return;
+      if (normalizeText(editor.textContent || "") !== "") {
+        editor.setAttribute(ATTENDEE_AUTOFILL_ATTR, "true");
+        return;
+      }
+      void fillAttendees(editor);
+    });
   };
 
   const groupByContainer = (items) => {
@@ -178,6 +390,7 @@
   const startObserver = () => {
     const observer = new MutationObserver(() => {
       ensureButton();
+      maybeAutofillAttendees();
     });
 
     observer.observe(document.documentElement, {
@@ -188,6 +401,7 @@
 
   const boot = () => {
     ensureButton();
+    maybeAutofillAttendees();
     startObserver();
   };
 
