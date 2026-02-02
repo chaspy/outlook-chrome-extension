@@ -18,10 +18,12 @@
   const ATTENDEE_PLACEHOLDERS = ["Invite attendees", "出席者を追加"];
   const IGNORE_CALENDAR_NAMES = new Set(["Calendar", "Birthdays", "Japan holidays"]);
   const ATTENDEE_AUTOFILL_ATTR = "data-oce-attendees-filled";
+  const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 
   const state = {
     active: false,
-    lastRunAt: 0
+    lastRunAt: 0,
+    selfEmail: ""
   };
 
   const showToast = (message) => {
@@ -60,6 +62,11 @@
   };
 
   const normalizeText = (value) => value.replace(/\s+/g, " ").trim();
+  const normalizeEmail = (value) => value.trim().toLowerCase();
+  const isEmailInput = (value) => value.includes("@");
+  const stripInvisible = (value) =>
+    value.replace(/[\s\u200B\u200C\u200D\uFEFF]/g, "");
+  const isEffectivelyEmpty = (value) => stripInvisible(value).length === 0;
 
   const sleep = (ms) =>
     new Promise((resolve) => {
@@ -69,8 +76,46 @@
   const isVisible = (el) =>
     !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
 
+  const getAccessibleDocuments = () => {
+    const docs = new Set();
+    docs.add(document);
+    try {
+      if (window.parent?.document) docs.add(window.parent.document);
+    } catch (error) {
+      // ignore cross-origin frames
+    }
+    try {
+      if (window.top?.document) docs.add(window.top.document);
+    } catch (error) {
+      // ignore cross-origin frames
+    }
+    return [...docs];
+  };
+
+  const collectDocuments = (rootDoc, depth = 0, maxDepth = 2) => {
+    const docs = [rootDoc];
+    if (depth >= maxDepth) return docs;
+    const frames = [...rootDoc.querySelectorAll("iframe")];
+    frames.forEach((frame) => {
+      try {
+        if (frame.contentDocument) {
+          docs.push(...collectDocuments(frame.contentDocument, depth + 1, maxDepth));
+        }
+      } catch (error) {
+        // ignore cross-origin frames
+      }
+    });
+    return docs;
+  };
+
   const getSelectedCalendarNames = () => {
-    const selected = [...document.querySelectorAll("button[role=\"option\"][aria-selected=\"true\"]")];
+    const docs = getAccessibleDocuments();
+    const selected = [];
+    docs.forEach((doc) => {
+      selected.push(
+        ...doc.querySelectorAll("button[role=\"option\"][aria-selected=\"true\"]")
+      );
+    });
     return selected
       .map((button) => {
         const label = button.querySelector(".ATH58");
@@ -80,23 +125,76 @@
       .filter((name) => name && !IGNORE_CALENDAR_NAMES.has(name));
   };
 
-  const getAttendeeEditors = () => {
-    const editors = [
-      ...document.querySelectorAll("[data-placeholder][contenteditable=\"true\"]")
-    ];
-    return editors.filter((editor) => {
-      const placeholder = editor.getAttribute("data-placeholder") || "";
-      return ATTENDEE_PLACEHOLDERS.includes(placeholder);
-    });
+  const getEditorPillLabels = (editor) => {
+    const pills = [...editor.querySelectorAll("._EType_RECIPIENT_ENTITY")];
+    return new Set(
+      pills
+        .map((pill) => {
+          const label = pill.getAttribute("aria-label");
+          if (label) return normalizeText(label);
+          const text = pill.querySelector(".textContainer-390");
+          return text ? normalizeText(text.textContent || "") : "";
+        })
+        .filter(Boolean)
+    );
   };
 
-  const findSuggestionItems = () => {
-    const items = [
-      ...document.querySelectorAll(
-        "[role=\"option\"][aria-label], [data-automationid=\"suggestionItem\"], .ms-Suggestions-item"
-      )
-    ];
-    return items.filter(isVisible);
+  const findSelfEmail = (doc) => {
+    const root = doc || document;
+    const nodes = [...root.querySelectorAll(".ms-Dropdown-title, .ms-Dropdown, [role=\"combobox\"]")];
+    for (const node of nodes) {
+      const text = node.textContent || "";
+      const match = text.match(EMAIL_PATTERN);
+      if (match) return match[0];
+    }
+    return "";
+  };
+
+  const ensureSelfEmail = (doc) => {
+    if (state.selfEmail) return state.selfEmail;
+    const email = findSelfEmail(doc);
+    if (email) state.selfEmail = email;
+    return state.selfEmail;
+  };
+
+  const getAttendeeEditors = () => {
+    const docs = collectDocuments(document);
+    const editors = [];
+    docs.forEach((doc) => {
+      editors.push(...doc.querySelectorAll("[contenteditable=\"true\"]"));
+    });
+    const visibleEditors = editors.filter(isVisible);
+
+    const byPlaceholder = visibleEditors.filter((editor) => {
+      const placeholder =
+        editor.getAttribute("data-placeholder") || editor.getAttribute("aria-label") || "";
+      return ATTENDEE_PLACEHOLDERS.some((value) => placeholder.includes(value));
+    });
+    if (byPlaceholder.length > 0) return byPlaceholder;
+
+    const pickerParents = [
+      ...document.querySelectorAll(".ms-BasePicker, .ms-BaseFloatingPicker")
+    ]
+      .map((node) => node.parentElement)
+      .filter(Boolean);
+
+    const fallback = [];
+    pickerParents.forEach((parent) => {
+      const editor = parent.querySelector("[contenteditable=\"true\"]");
+      if (editor && isVisible(editor)) fallback.push(editor);
+    });
+
+    return fallback;
+  };
+
+  const findSuggestionItems = (editor) => {
+    const selector =
+      "[role=\"option\"][aria-label], [data-automationid=\"suggestionItem\"], .ms-Suggestions-item";
+    const scopedRoot = editor ? editor.closest(".CoqO5") : null;
+    const scoped = scopedRoot ? [...scopedRoot.querySelectorAll(selector)] : [];
+    const global = [...document.querySelectorAll(selector)];
+    const merged = [...new Set([...scoped, ...global])];
+    return merged.filter(isVisible);
   };
 
   const extractSuggestionName = (item) => {
@@ -137,21 +235,25 @@
     return match ? match[0] : "";
   };
 
-  const findExactSuggestionMatch = (name) => {
+  const findExactSuggestionMatch = (name, editor) => {
     const normalizedName = normalizeText(name);
-    const items = findSuggestionItems();
-    for (const item of items) {
-      if (extractSuggestionName(item) === normalizedName) {
-        return item;
+    const normalizedEmail = normalizeEmail(name);
+    const items = findSuggestionItems(editor);
+    const matches = items.filter((item) => {
+      if (isEmailInput(name)) {
+        return normalizeEmail(extractEmailFromSuggestion(item)) === normalizedEmail;
       }
-    }
+      return extractSuggestionName(item) === normalizedName;
+    });
+    if (matches.length === 1) return matches[0];
     return null;
   };
 
-  const waitForExactSuggestion = async (name, timeoutMs = 1600) => {
+  const waitForExactSuggestion = async (name, editor, timeoutMs = 2000) => {
+    await sleep(isEmailInput(name) ? 320 : 160);
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      const match = findExactSuggestionMatch(name);
+      const match = findExactSuggestionMatch(name, editor);
       if (match) return match;
       await sleep(80);
     }
@@ -189,15 +291,56 @@
     editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
   };
 
-  const insertText = (editor, text) => {
-    clearEditorInputText(editor);
+  const appendText = (editor, text) => {
     placeCaretAtEnd(editor);
+    editor.dispatchEvent(
+      new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        data: text,
+        inputType: "insertText"
+      })
+    );
     if (document.queryCommandSupported && document.queryCommandSupported("insertText")) {
       document.execCommand("insertText", false, text);
     } else {
       editor.textContent += text;
     }
-    editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    editor.dispatchEvent(
+      new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" })
+    );
+  };
+
+  const emitKey = (editor, key, code, keyCode) => {
+    const eventInit = {
+      key,
+      code,
+      keyCode,
+      which: keyCode,
+      charCode: key.length === 1 ? key.charCodeAt(0) : 0,
+      bubbles: true,
+      cancelable: true
+    };
+    editor.dispatchEvent(new KeyboardEvent("keydown", eventInit));
+    editor.dispatchEvent(new KeyboardEvent("keypress", eventInit));
+    editor.dispatchEvent(new KeyboardEvent("keyup", eventInit));
+  };
+
+  const commitByArrowEnter = async (editor) => {
+    emitKey(editor, "ArrowDown", "ArrowDown", 40);
+    await sleep(120);
+    emitKey(editor, "Enter", "Enter", 13);
+    editor.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  const typeChar = (editor, char, code, keyCode) => {
+    emitKey(editor, char, code, keyCode);
+    appendText(editor, char);
+  };
+
+  const insertText = (editor, text) => {
+    clearEditorInputText(editor);
+    appendText(editor, text);
   };
 
   const commitEditor = (editor) => {
@@ -216,23 +359,52 @@
     editor.dispatchEvent(new Event("change", { bubbles: true }));
   };
 
+  const waitForPillIncrease = async (editor, beforeCount, timeoutMs = 1500) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const currentCount = editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length;
+      if (currentCount > beforeCount) return true;
+      await sleep(80);
+    }
+    return false;
+  };
+
+  const attemptDirectEmailCommit = async (editor, email, beforeCount) => {
+    clearEditorInputText(editor);
+    appendText(editor, email);
+    await sleep(80);
+    typeChar(editor, ";", "Semicolon", 186);
+    await sleep(180);
+    commitEditor(editor);
+    editor.blur();
+    editor.dispatchEvent(new Event("focusout", { bubbles: true }));
+    const inserted = await waitForPillIncrease(editor, beforeCount, 2500);
+    if (inserted) {
+      clearEditorInputText(editor);
+      return true;
+    }
+    // Leave the text so the user can manually resolve it if needed.
+    return false;
+  };
+
   const addAttendeeByName = async (editor, name) => {
+    const beforeCount = editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length;
     insertText(editor, name);
-    const match = await waitForExactSuggestion(name);
+    const match = await waitForExactSuggestion(name, editor, isEmailInput(name) ? 3000 : 2000);
     if (match) {
       match.click();
-      const start = Date.now();
-      while (Date.now() - start < 1500) {
-        const pill = editor.querySelector("._EType_RECIPIENT_ENTITY[aria-label]");
-        if (pill && normalizeText(pill.getAttribute("aria-label") || "") === name) {
-          clearEditorInputText(editor);
-          return true;
-        }
-        await sleep(80);
-      }
+      const inserted = await waitForPillIncrease(editor, beforeCount);
       clearEditorInputText(editor);
-      return false;
+      return inserted;
     }
+
+    if (isEmailInput(name)) {
+      const inserted = await attemptDirectEmailCommit(editor, name, beforeCount);
+      if (inserted) return true;
+      await commitByArrowEnter(editor);
+      return await waitForPillIncrease(editor, beforeCount, 2500);
+    }
+
     clearEditor(editor);
     await sleep(80);
     return false;
@@ -240,18 +412,29 @@
 
   const fillAttendees = async (editor) => {
     if (!editor || editor.getAttribute(ATTENDEE_AUTOFILL_ATTR) === "true") return;
-    if (normalizeText(editor.textContent || "") !== "") return;
+    const hasPills =
+      editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length > 0;
+    const hasText = !isEffectivelyEmpty(editor.textContent || "");
+    if (hasText && !hasPills) return;
 
     const names = getSelectedCalendarNames();
-    if (names.length === 0) return;
+    const selfEmail = ensureSelfEmail(editor.ownerDocument);
+    const inputs = [...names];
+    if (selfEmail) inputs.push(selfEmail);
+    if (inputs.length === 0) return;
 
     editor.setAttribute(ATTENDEE_AUTOFILL_ATTR, "true");
 
+    const existing = getEditorPillLabels(editor);
     const seen = new Set();
-    for (const name of names) {
-      if (seen.has(name)) continue;
-      seen.add(name);
-      await addAttendeeByName(editor, name);
+
+    for (const input of inputs) {
+      const key = isEmailInput(input) ? normalizeEmail(input) : normalizeText(input);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!isEmailInput(input) && existing.has(key)) continue;
+      await addAttendeeByName(editor, input);
+      if (!isEmailInput(input)) existing.add(key);
       await sleep(120);
     }
   };
@@ -260,12 +443,62 @@
     const editors = getAttendeeEditors();
     editors.forEach((editor) => {
       if (editor.getAttribute(ATTENDEE_AUTOFILL_ATTR) === "true") return;
-      if (normalizeText(editor.textContent || "") !== "") {
-        editor.setAttribute(ATTENDEE_AUTOFILL_ATTR, "true");
-        return;
-      }
       void fillAttendees(editor);
     });
+  };
+
+  const collectDebugInfo = () => {
+    const docs = collectDocuments(document);
+    const contentEditableTotal = docs.reduce(
+      (total, doc) => total + doc.querySelectorAll("[contenteditable=\"true\"]").length,
+      0
+    );
+
+    const placeholderSamples = [];
+    docs.forEach((doc) => {
+      doc.querySelectorAll("[data-placeholder]").forEach((node) => {
+        const value = (node.getAttribute("data-placeholder") || "").trim();
+        if (value) placeholderSamples.push(value);
+      });
+    });
+
+    const editors = getAttendeeEditors();
+    const editorSummaries = editors.slice(0, 6).map((editor) => ({
+      placeholder: editor.getAttribute("data-placeholder"),
+      ariaLabel: editor.getAttribute("aria-label"),
+      className: editor.className,
+      textSample: (editor.textContent || "").trim().slice(0, 120),
+      ownerLocation: editor.ownerDocument?.location?.href || ""
+    }));
+
+    const iframes = [...document.querySelectorAll("iframe")].map((frame) => {
+      let sameOrigin = false;
+      let href = "";
+      try {
+        sameOrigin = !!frame.contentDocument;
+        href = frame.contentDocument?.location?.href || "";
+      } catch (error) {
+        // ignore cross-origin frames
+      }
+      return { src: frame.src, sameOrigin, href };
+    });
+
+    return {
+      timestamp: new Date().toISOString(),
+      location: window.location.href,
+      topLevel: window.top === window,
+      readyState: document.readyState,
+      selfEmail: ensureSelfEmail(document),
+      selectedNames: getSelectedCalendarNames(),
+      editorCount: editors.length,
+      editorSummaries,
+      contentEditableTotal,
+      placeholderSamples: [...new Set(placeholderSamples)].slice(0, 20),
+      suggestionCount: findSuggestionItems().length,
+      iframeCount: iframes.length,
+      iframes,
+      userAgent: navigator.userAgent
+    };
   };
 
   const groupByContainer = (items) => {
@@ -404,6 +637,18 @@
     maybeAutofillAttendees();
     startObserver();
   };
+
+  if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (!message || message.type !== "OCE_DEBUG") return false;
+      try {
+        sendResponse(collectDebugInfo());
+      } catch (error) {
+        sendResponse({ error: error?.message || String(error) });
+      }
+      return false;
+    });
+  }
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot, { once: true });
