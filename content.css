@@ -53,3 +53,31 @@
   outline-offset: 2px;
   box-shadow: 0 0 0 2px rgba(255, 185, 0, 0.3);
 }
+
+#oce-calendar-search {
+  position: sticky;
+  top: 0;
+  padding: 6px 8px;
+  background: #f7f7f7;
+  border-bottom: 1px solid #e5e5e5;
+  z-index: 9999;
+}
+
+#oce-calendar-search input {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 1px solid #c8c8c8;
+  border-radius: 4px;
+  outline: none;
+  background: #fff;
+}
+
+.oce-calendar-search-hit {
+  outline: 2px dashed #0078d4;
+  outline-offset: 2px;
+}
+
+.oce-calendar-search-miss {
+  display: none !important;
+}

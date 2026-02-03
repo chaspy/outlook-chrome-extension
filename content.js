@@ -2,6 +2,10 @@
   const BUTTON_ID = "oce-conflict-button";
   const TOAST_ID = "oce-conflict-toast";
   const CONFLICT_CLASS = "oce-conflict";
+  const SEARCH_BOX_ID = "oce-calendar-search";
+  const SEARCH_INPUT_ID = "oce-calendar-search-input";
+  const SEARCH_HIT_CLASS = "oce-calendar-search-hit";
+  const SEARCH_MISS_CLASS = "oce-calendar-search-miss";
   const CALENDAR_ROOT_SELECTOR = ".templateColumnContent, [data-calitemid]";
   const USE_OUTLOOK_CONFLICT_FLAG = false;
   const IGNORE_LABEL_PATTERNS = [
@@ -31,7 +35,10 @@
     autofillRuns: 0,
     autofillSkips: 0,
     autofillLastInputs: [],
-    recentInputs: new Map()
+    recentInputs: new Map(),
+    searchTerm: "",
+    searchCandidates: 0,
+    searchMatches: 0
   };
 
   const showToast = (message) => {
@@ -155,6 +162,126 @@
         seen.add(key);
         return true;
       });
+  };
+
+  const getCalendarOptionButtons = () => {
+    const docs = collectDocuments(document);
+    const buttons = [];
+    docs.forEach((doc) => {
+      buttons.push(...doc.querySelectorAll("button[role=\"option\"]"));
+    });
+    return buttons.filter((button) => button.querySelector(".ATH58"));
+  };
+
+  const findCalendarListRoot = () => {
+    const docs = collectDocuments(document);
+    for (const doc of docs) {
+      const list = [...doc.querySelectorAll("ul")].find((ul) =>
+        ul.querySelector("button[role=\"option\"] .ATH58")
+      );
+      if (list) return list;
+    }
+    return null;
+  };
+
+  const applyCalendarSearch = (raw) => {
+    const term = normalizeText(raw || "").toLowerCase();
+    const docs = collectDocuments(document);
+    state.searchCandidates = 0;
+    state.searchMatches = 0;
+
+    let firstMatch = null;
+
+    const getRows = (root) =>
+      [...root.querySelectorAll(".GsziR")].filter((row) =>
+        row.querySelector("button[role=\"option\"] .ATH58")
+      );
+
+    docs.forEach((doc) => {
+      const groups = [...doc.querySelectorAll("li[aria-label]")];
+      const rows = getRows(doc);
+
+      if (!term) {
+        groups.forEach((group) => {
+          group.classList.remove(SEARCH_HIT_CLASS, SEARCH_MISS_CLASS);
+        });
+        rows.forEach((row) => {
+          row.classList.remove(SEARCH_HIT_CLASS, SEARCH_MISS_CLASS);
+          row
+            .querySelectorAll("button[role=\"option\"]")
+            .forEach((button) =>
+              button.classList.remove(SEARCH_HIT_CLASS, SEARCH_MISS_CLASS)
+            );
+        });
+        return;
+      }
+
+      const groupHasMatch = new Map();
+      rows.forEach((row) => {
+        const label = row.querySelector(".ATH58");
+        const name = normalizeText(label ? label.textContent || "" : "");
+        const match = name.toLowerCase().includes(term);
+        row.classList.toggle(SEARCH_HIT_CLASS, match);
+        row.classList.toggle(SEARCH_MISS_CLASS, !match);
+        row
+          .querySelectorAll("button[role=\"option\"]")
+          .forEach((button) => {
+            button.classList.toggle(SEARCH_HIT_CLASS, match);
+            button.classList.toggle(SEARCH_MISS_CLASS, !match);
+          });
+        state.searchCandidates += 1;
+        if (match) {
+          state.searchMatches += 1;
+          const group = row.closest("li[aria-label]");
+          if (group) groupHasMatch.set(group, true);
+          if (!firstMatch) firstMatch = row;
+        }
+      });
+
+      groups.forEach((group) => {
+        const hasRows = group.querySelector(".GsziR");
+        if (!hasRows) return;
+        const hasMatch = groupHasMatch.get(group) === true;
+        group.classList.toggle(SEARCH_HIT_CLASS, hasMatch);
+        group.classList.toggle(SEARCH_MISS_CLASS, !hasMatch);
+      });
+    });
+
+    if (firstMatch && term !== state.searchTerm) {
+      firstMatch.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+    state.searchTerm = term;
+  };
+
+  const ensureSearchBox = () => {
+    if (document.getElementById(SEARCH_BOX_ID)) return;
+    const listRoot = findCalendarListRoot();
+    if (!listRoot) return;
+
+    const container = document.createElement("div");
+    container.id = SEARCH_BOX_ID;
+
+    const input = document.createElement("input");
+    input.id = SEARCH_INPUT_ID;
+    input.type = "search";
+    input.placeholder = "検索（名前）";
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.value = state.searchTerm;
+
+    input.addEventListener("input", (event) => {
+      applyCalendarSearch(event.target.value);
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        input.value = "";
+        applyCalendarSearch("");
+      }
+    });
+
+    container.appendChild(input);
+    listRoot.parentElement?.insertBefore(container, listRoot);
+    if (state.searchTerm) applyCalendarSearch(state.searchTerm);
   };
 
   const getEditorPillLabels = (editor) => {
@@ -576,6 +703,9 @@
       recentInputsCount: state.recentInputs.size,
       recentInputsSample: [...state.recentInputs.keys()].slice(0, 10),
       lastAutofillInputs: state.autofillLastInputs,
+      searchTerm: state.searchTerm,
+      searchCandidates: state.searchCandidates,
+      searchMatches: state.searchMatches,
       selectedNames: getSelectedCalendarNames(),
       editorCount: editors.length,
       editorSummaries,
@@ -710,6 +840,8 @@
   const startObserver = () => {
     const observer = new MutationObserver(() => {
       ensureButton();
+      ensureSearchBox();
+      if (state.searchTerm) applyCalendarSearch(state.searchTerm);
       maybeAutofillAttendees();
     });
 
@@ -721,6 +853,7 @@
 
   const boot = () => {
     ensureButton();
+    ensureSearchBox();
     maybeAutofillAttendees();
     startObserver();
   };
