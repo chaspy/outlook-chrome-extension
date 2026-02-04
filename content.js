@@ -50,7 +50,9 @@
     contactsCount: 0,
     contactsLoaded: false,
     showAllClicked: false,
-    showAllAttemptedAt: 0
+    showAllAttemptedAt: 0,
+    ignoredErrors: 0,
+    lastIgnoredError: ""
   };
 
   let selectionObserver = null;
@@ -67,7 +69,7 @@
     toast.textContent = message;
     document.body.appendChild(toast);
 
-    window.setTimeout(() => {
+    globalThis.setTimeout(() => {
       toast.remove();
     }, 2200);
   };
@@ -94,12 +96,17 @@
   };
 
   const stripInvisible = (value) =>
-    value.replace(/[\s\u200B\u200C\u200D\uFEFF]/g, "");
+    value
+      .replaceAll(/\s/g, "")
+      .replaceAll("\u200B", "")
+      .replaceAll("\u200C", "")
+      .replaceAll("\u200D", "")
+      .replaceAll("\uFEFF", "");
   const isEffectivelyEmpty = (value) => stripInvisible(value).length === 0;
   const normalizeText = (value) =>
-    stripInvisible(value).replace(/\s+/g, " ").trim();
+    stripInvisible(value).replaceAll(/\s+/g, " ").trim();
   const normalizeNameKey = (value) =>
-    stripInvisible(value).replace(/\s+/g, "").trim().toLowerCase();
+    stripInvisible(value).replaceAll(/\s+/g, "").trim().toLowerCase();
   const normalizeEmail = (value) => value.trim().toLowerCase();
   const isEmailInput = (value) => value.includes("@");
   const normalizeSearchTerm = (value) => {
@@ -107,9 +114,15 @@
     if (!cleaned) return "";
     const match = cleaned.match(EMAIL_PATTERN);
     if (match) return match[0].toLowerCase();
-    const stripped = cleaned.replace(/[<>"',;]+/g, "");
-    if (stripped.includes("@")) return stripped.replace(/\s+/g, "");
+    const stripped = cleaned.replaceAll(/[<>"',;]+/g, "");
+    if (stripped.includes("@")) return stripped.replaceAll(/\s+/g, "");
     return cleaned;
+  };
+
+  const captureIgnoredError = (error, context) => {
+    state.ignoredErrors += 1;
+    const message = error?.message || String(error || "");
+    state.lastIgnoredError = context ? `${context}: ${message}` : message;
   };
 
   const updateContactsFromList = (list) => {
@@ -166,13 +179,13 @@
 
   const getUniqueEmailForName = (nameKey) => {
     const emails = getEmailsForName(nameKey);
-    if (!emails || emails.size !== 1) return "";
+    if (emails?.size !== 1) return "";
     return [...emails][0];
   };
 
   const sleep = (ms) =>
     new Promise((resolve) => {
-      window.setTimeout(resolve, ms);
+      globalThis.setTimeout(resolve, ms);
     });
 
   const pruneRecentInputs = () => {
@@ -198,14 +211,14 @@
     const docs = new Set();
     docs.add(document);
     try {
-      if (window.parent?.document) docs.add(window.parent.document);
+      if (globalThis.parent?.document) docs.add(globalThis.parent.document);
     } catch (error) {
-      // ignore cross-origin frames
+      captureIgnoredError(error, "parent.document");
     }
     try {
-      if (window.top?.document) docs.add(window.top.document);
+      if (globalThis.top?.document) docs.add(globalThis.top.document);
     } catch (error) {
-      // ignore cross-origin frames
+      captureIgnoredError(error, "top.document");
     }
     return [...docs];
   };
@@ -220,7 +233,7 @@
           docs.push(...collectDocuments(frame.contentDocument, depth + 1, maxDepth));
         }
       } catch (error) {
-        // ignore cross-origin frames
+        captureIgnoredError(error, "frame.contentDocument");
       }
     });
     return docs;
@@ -320,7 +333,6 @@
   const SHOW_ALL_LABELS = ["Show all", "すべて表示"];
   const RIBBON_CONTAINER_SELECTOR =
     "#innerRibbonContainer, [data-automation-type=\"RibbonBottomBarContainer\"]";
-  const TABLIST_SELECTOR = "#tablist, [role=\"tablist\"]";
 
   const isShowAllLabel = (text) => {
     const normalized = normalizeText(text || "").toLowerCase();
@@ -379,7 +391,7 @@
 
   const placeConflictButton = (button) => {
     const anchor = findConflictButtonAnchor();
-    if (anchor && anchor.isConnected) {
+    if (anchor?.isConnected) {
       button.classList.add("oce-conflict-inline");
       if (button.parentElement !== anchor) {
         anchor.appendChild(button);
@@ -497,10 +509,10 @@
       }
       maybeAutofillAttendees();
     };
-    if (window.requestAnimationFrame) {
-      window.requestAnimationFrame(run);
+    if (globalThis.requestAnimationFrame) {
+      globalThis.requestAnimationFrame(run);
     } else {
-      window.setTimeout(run, 100);
+      globalThis.setTimeout(run, 100);
     }
   };
 
@@ -512,13 +524,87 @@
       renderSelectedSummary();
       maybeAutofillAttendees();
     };
-    if (window.requestAnimationFrame) {
-      window.requestAnimationFrame(run);
+    if (globalThis.requestAnimationFrame) {
+      globalThis.requestAnimationFrame(run);
     } else {
-      window.setTimeout(run, 100);
+      globalThis.setTimeout(run, 100);
     }
   };
 
+  const clearSearchClasses = (groups, rows) => {
+    for (const group of groups) {
+      group.classList.remove(SEARCH_HIT_CLASS, SEARCH_MISS_CLASS);
+    }
+    for (const row of rows) {
+      row.classList.remove(SEARCH_HIT_CLASS, SEARCH_MISS_CLASS);
+      const buttons = row.querySelectorAll("button[role=\"option\"]");
+      for (const button of buttons) {
+        button.classList.remove(SEARCH_HIT_CLASS, SEARCH_MISS_CLASS);
+      }
+    }
+  };
+
+  const setRowMatchState = (row, match) => {
+    row.classList.toggle(SEARCH_HIT_CLASS, match);
+    row.classList.toggle(SEARCH_MISS_CLASS, !match);
+    const buttons = row.querySelectorAll("button[role=\"option\"]");
+    for (const button of buttons) {
+      button.classList.toggle(SEARCH_HIT_CLASS, match);
+      button.classList.toggle(SEARCH_MISS_CLASS, !match);
+    }
+  };
+
+  const getCalendarRowName = (row) => {
+    const label = row.querySelector(".ATH58");
+    const raw = label ? label.textContent : row.textContent;
+    return normalizeText(raw || "");
+  };
+
+  const applyRowMatch = (row, term, groupHasMatch, matchState) => {
+    const name = getCalendarRowName(row);
+    const match = matchesCalendarSearch(name, term);
+    setRowMatchState(row, match);
+    matchState.candidates += 1;
+    if (!match) return;
+    matchState.matches += 1;
+    const group = row.closest("li[aria-label]");
+    if (group) groupHasMatch.set(group, true);
+    if (!matchState.firstMatch) matchState.firstMatch = row;
+  };
+
+  const updateGroupMatchClasses = (groups, groupHasMatch) => {
+    for (const group of groups) {
+      const hasRows = group.querySelector("button[role=\"option\"]");
+      if (!hasRows) continue;
+      const hasMatch = groupHasMatch.get(group) === true;
+      group.classList.toggle(SEARCH_HIT_CLASS, hasMatch);
+      group.classList.toggle(SEARCH_MISS_CLASS, !hasMatch);
+    }
+  };
+
+  const applySearchToDoc = (doc, term) => {
+    const listRoot = findCalendarListRootInDoc(doc);
+    if (!listRoot) return { candidates: 0, matches: 0, firstMatch: null };
+    const listContainer = listRoot.ul;
+    const groups = [...listContainer.querySelectorAll("li[aria-label]")];
+    const rows = getCalendarRows(listContainer);
+
+    if (!term) {
+      clearSearchClasses(groups, rows);
+      return { candidates: 0, matches: 0, firstMatch: null };
+    }
+
+    const groupHasMatch = new Map();
+    const matchState = { candidates: 0, matches: 0, firstMatch: null };
+
+    for (const row of rows) {
+      applyRowMatch(row, term, groupHasMatch, matchState);
+    }
+
+    updateGroupMatchClasses(groups, groupHasMatch);
+
+    return matchState;
+  };
 
   const applyCalendarSearch = (raw) => {
     const term = normalizeSearchTerm(raw);
@@ -528,59 +614,12 @@
 
     let firstMatch = null;
 
-    docs.forEach((doc) => {
-      const listRoot = findCalendarListRootInDoc(doc);
-      if (!listRoot) return;
-      const listContainer = listRoot.ul;
-      const groups = [...listContainer.querySelectorAll("li[aria-label]")];
-      const rows = getCalendarRows(listContainer);
-
-      if (!term) {
-        groups.forEach((group) => {
-          group.classList.remove(SEARCH_HIT_CLASS, SEARCH_MISS_CLASS);
-        });
-        rows.forEach((row) => {
-          row.classList.remove(SEARCH_HIT_CLASS, SEARCH_MISS_CLASS);
-          row
-            .querySelectorAll("button[role=\"option\"]")
-            .forEach((button) =>
-              button.classList.remove(SEARCH_HIT_CLASS, SEARCH_MISS_CLASS)
-            );
-        });
-        return;
-      }
-
-      const groupHasMatch = new Map();
-      rows.forEach((row) => {
-        const label = row.querySelector(".ATH58");
-        const raw = label ? label.textContent : row.textContent;
-        const name = normalizeText(raw || "");
-        const match = matchesCalendarSearch(name, term);
-        row.classList.toggle(SEARCH_HIT_CLASS, match);
-        row.classList.toggle(SEARCH_MISS_CLASS, !match);
-        row
-          .querySelectorAll("button[role=\"option\"]")
-          .forEach((button) => {
-            button.classList.toggle(SEARCH_HIT_CLASS, match);
-            button.classList.toggle(SEARCH_MISS_CLASS, !match);
-          });
-        state.searchCandidates += 1;
-        if (match) {
-          state.searchMatches += 1;
-          const group = row.closest("li[aria-label]");
-          if (group) groupHasMatch.set(group, true);
-          if (!firstMatch) firstMatch = row;
-        }
-      });
-
-      groups.forEach((group) => {
-        const hasRows = group.querySelector("button[role=\"option\"]");
-        if (!hasRows) return;
-        const hasMatch = groupHasMatch.get(group) === true;
-        group.classList.toggle(SEARCH_HIT_CLASS, hasMatch);
-        group.classList.toggle(SEARCH_MISS_CLASS, !hasMatch);
-      });
-    });
+    for (const doc of docs) {
+      const result = applySearchToDoc(doc, term);
+      state.searchCandidates += result.candidates;
+      state.searchMatches += result.matches;
+      if (!firstMatch && result.firstMatch) firstMatch = result.firstMatch;
+    }
 
     if (firstMatch && term !== state.searchTerm) {
       firstMatch.scrollIntoView({ block: "center", inline: "nearest" });
@@ -652,7 +691,7 @@
     summary.appendChild(header);
     summary.appendChild(list);
 
-    searchBox.insertAdjacentElement("afterend", summary);
+    searchBox.after(summary);
     renderSelectedSummary();
   };
 
@@ -721,7 +760,7 @@
 
     const byPlaceholder = visibleEditors.filter((editor) => {
       const placeholder =
-        editor.getAttribute("data-placeholder") || editor.getAttribute("aria-label") || "";
+        editor.dataset.placeholder || editor.getAttribute("aria-label") || "";
       return ATTENDEE_PLACEHOLDERS.some((value) => placeholder.includes(value));
     });
     if (byPlaceholder.length > 0) return byPlaceholder;
@@ -821,7 +860,7 @@
 
   const placeCaretAtEnd = (editor) => {
     editor.focus();
-    const selection = window.getSelection();
+    const selection = globalThis.getSelection?.();
     if (!selection) return;
     const range = document.createRange();
     range.selectNodeContents(editor);
@@ -836,7 +875,7 @@
     let node = walker.nextNode();
     while (node) {
       const parent = node.parentElement;
-      if (!parent || !parent.closest("._EType_RECIPIENT_ENTITY")) {
+      if (!parent?.closest("._EType_RECIPIENT_ENTITY")) {
         toRemove.push(node);
       }
       node = walker.nextNode();
@@ -855,11 +894,7 @@
         inputType: "insertText"
       })
     );
-    if (document.queryCommandSupported && document.queryCommandSupported("insertText")) {
-      document.execCommand("insertText", false, text);
-    } else {
-      editor.textContent += text;
-    }
+    editor.insertAdjacentText("beforeend", text);
     editor.dispatchEvent(
       new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" })
     );
@@ -871,7 +906,7 @@
       code,
       keyCode,
       which: keyCode,
-      charCode: key.length === 1 ? key.charCodeAt(0) : 0,
+      charCode: key.length === 1 ? key.codePointAt(0) ?? 0 : 0,
       bubbles: true,
       cancelable: true
     };
@@ -911,16 +946,6 @@
       );
     });
     editor.dispatchEvent(new Event("change", { bubbles: true }));
-  };
-
-  const waitForPillIncrease = async (editor, beforeCount, timeoutMs = 1500) => {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      const currentCount = editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length;
-      if (currentCount > beforeCount) return true;
-      await sleep(80);
-    }
-    return false;
   };
 
   const waitForPillInsert = async (editor, beforeCount, input, timeoutMs = 2000) => {
@@ -1001,8 +1026,7 @@
     if (selfEmail) {
       const emailKey = normalizeEmail(selfEmail);
       const namesForEmail = getNamesForEmail(emailKey);
-      const nameKey =
-        namesForEmail && namesForEmail.size === 1 ? [...namesForEmail][0] : "";
+      const nameKey = namesForEmail?.size === 1 ? [...namesForEmail][0] : "";
       entries.push({ input: selfEmail, nameKey, emailKey, source: "self" });
     }
 
@@ -1033,53 +1057,76 @@
     return normalized.join("|");
   };
 
-  const fillAttendees = async (editor) => {
-    if (!editor || editor.getAttribute(ATTENDEE_AUTOFILL_ATTR) === "true") return;
-    if (editor.getAttribute(ATTENDEE_AUTOFILLING_ATTR) === "true") return;
-    if (!state.contactsLoaded && chrome?.storage?.local) return;
+  const shouldSkipAutofillEditor = (editor) => {
+    if (!editor) return true;
+    if (editor.getAttribute(ATTENDEE_AUTOFILL_ATTR) === "true") return true;
+    if (editor.getAttribute(ATTENDEE_AUTOFILLING_ATTR) === "true") return true;
+    if (!state.contactsLoaded && chrome?.storage?.local) return true;
     const hasPills =
       editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length > 0;
     const hasText = !isEffectivelyEmpty(editor.textContent || "");
-    if (hasText && !hasPills) return;
+    return hasText && !hasPills;
+  };
 
+  const buildAutofillEntries = (editor) => {
     const names = getSelectedCalendarNames();
     const selfEmail = ensureSelfEmail(editor.ownerDocument);
     const entries = resolveAttendeeInputs(names, selfEmail);
-    if (entries.length === 0) return;
+    if (entries.length === 0) return null;
 
     const autofillKey = buildAutofillKey(entries);
     const now = Date.now();
     if (state.lastAutofillKey === autofillKey && now - state.lastAutofillAt < 8000) {
       state.autofillSkips += 1;
-      return;
+      return null;
     }
 
     state.lastAutofillKey = autofillKey;
     state.lastAutofillAt = now;
     state.autofillRuns += 1;
     state.autofillLastInputs = entries.map((entry) => entry.input).slice(0, 10);
+    return entries;
+  };
+
+  const getAutofillEntryKey = (entry) => entry.emailKey || entry.nameKey || "";
+
+  const shouldSkipAutofillEntry = (entry, key, existing, seen) => {
+    if (!key || wasRecentlyInserted(key) || seen.has(key)) return true;
+    if (entry.nameKey && existing.has(entry.nameKey)) return true;
+    if (entry.emailKey && hasExistingForEmail(entry.emailKey, existing)) return true;
+    return false;
+  };
+
+  const applyAutofillEntry = async (editor, entry, key, existing) => {
+    const inserted = await addAttendeeByName(editor, entry.input);
+    if (!inserted) return;
+    markInserted(key);
+    if (entry.nameKey) existing.add(entry.nameKey);
+    if (entry.emailKey) addExistingForEmail(entry.emailKey, existing);
+  };
+
+  const applyAutofillEntries = async (editor, entries, existing) => {
+    const seen = new Set();
+    for (const entry of entries) {
+      const key = getAutofillEntryKey(entry);
+      if (shouldSkipAutofillEntry(entry, key, existing, seen)) continue;
+      seen.add(key);
+      await applyAutofillEntry(editor, entry, key, existing);
+      await sleep(120);
+    }
+  };
+
+  const fillAttendees = async (editor) => {
+    if (shouldSkipAutofillEditor(editor)) return;
+    const entries = buildAutofillEntries(editor);
+    if (!entries) return;
+
     editor.setAttribute(ATTENDEE_AUTOFILL_ATTR, "true");
     editor.setAttribute(ATTENDEE_AUTOFILLING_ATTR, "true");
-
     const existing = getEditorPillLabels(editor);
-    const seen = new Set();
 
     try {
-      for (const entry of entries) {
-        const key = entry.emailKey || entry.nameKey;
-        if (wasRecentlyInserted(key)) continue;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        if (entry.nameKey && existing.has(entry.nameKey)) continue;
-        if (entry.emailKey && hasExistingForEmail(entry.emailKey, existing)) continue;
-        const inserted = await addAttendeeByName(editor, entry.input);
-        if (inserted) {
-          markInserted(key);
-          if (entry.nameKey) existing.add(entry.nameKey);
-          if (entry.emailKey) addExistingForEmail(entry.emailKey, existing);
-        }
-        await sleep(120);
-      }
+      await applyAutofillEntries(editor, entries, existing);
     } finally {
       editor.removeAttribute(ATTENDEE_AUTOFILLING_ATTR);
     }
@@ -1103,14 +1150,14 @@
     const placeholderSamples = [];
     docs.forEach((doc) => {
       doc.querySelectorAll("[data-placeholder]").forEach((node) => {
-        const value = (node.getAttribute("data-placeholder") || "").trim();
+        const value = (node.dataset.placeholder || "").trim();
         if (value) placeholderSamples.push(value);
       });
     });
 
     const editors = getAttendeeEditors();
     const editorSummaries = editors.slice(0, 6).map((editor) => ({
-      placeholder: editor.getAttribute("data-placeholder"),
+      placeholder: editor.dataset.placeholder || null,
       ariaLabel: editor.getAttribute("aria-label"),
       className: editor.className,
       textSample: (editor.textContent || "").trim().slice(0, 120),
@@ -1172,15 +1219,15 @@
         sameOrigin = !!frame.contentDocument;
         href = frame.contentDocument?.location?.href || "";
       } catch (error) {
-        // ignore cross-origin frames
+        captureIgnoredError(error, "iframe.contentDocument");
       }
       return { src: frame.src, sameOrigin, href };
     });
 
     return {
       timestamp: new Date().toISOString(),
-      location: window.location.href,
-      topLevel: window.top === window,
+      location: globalThis.location?.href || "",
+      topLevel: globalThis.top === globalThis,
       readyState: document.readyState,
       selfEmail: ensureSelfEmail(document),
       autofillRuns: state.autofillRuns,
@@ -1195,6 +1242,8 @@
       contactsByEmailCount: state.contactsByEmail.size,
       contactsLoaded: state.contactsLoaded,
       contactsSamples: contactSamples,
+      ignoredErrors: state.ignoredErrors,
+      lastIgnoredError: state.lastIgnoredError,
       searchTerm: state.searchTerm,
       searchInputValue,
       searchBoxPresent,
@@ -1287,7 +1336,7 @@
 
     if (USE_OUTLOOK_CONFLICT_FLAG) {
       events.forEach((el) => {
-        if (el.getAttribute("data-conflict") === "1") {
+        if (el.dataset.conflict === "1") {
           conflicts.add(el);
         }
       });
@@ -1367,13 +1416,12 @@
 
   if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-      if (!message || message.type !== "OCE_DEBUG") return false;
+      if (!message || message.type !== "OCE_DEBUG") return;
       try {
         sendResponse(collectDebugInfo());
       } catch (error) {
         sendResponse({ error: error?.message || String(error) });
       }
-      return false;
     });
   }
 

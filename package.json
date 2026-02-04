@@ -1,0 +1,13 @@
+{
+  "name": "outlook-chrome-extension",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "lint": "eslint --rulesdir .eslint-rules \"**/*.js\""
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-plugin-sonarjs": "^0.25.0",
+    "eslint-plugin-unicorn": "^50.0.0"
+  }
+}

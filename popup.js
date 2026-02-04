@@ -37,27 +37,33 @@ const splitLine = (line, delimiter) => {
   const result = [];
   let current = "";
   let inQuotes = false;
-  for (let i = 0; i < line.length; i += 1) {
+  let i = 0;
+  while (i < line.length) {
     const char = line[i];
     if (char === "\"") {
       const next = line[i + 1];
       if (inQuotes && next === "\"") {
         current += "\"";
-        i += 1;
+        i += 2;
         continue;
       }
       inQuotes = !inQuotes;
+      i += 1;
       continue;
     }
     if (!inQuotes && char === delimiter) {
       result.push(current);
       current = "";
+      i += 1;
       continue;
     }
     current += char;
+    i += 1;
   }
   result.push(current);
-  return result.map((value) => value.trim().replace(/^"|"$/g, ""));
+  return result.map((value) =>
+    value.trim().replaceAll(/(^"|"$)/g, "")
+  );
 };
 
 const looksLikeEmail = (value) => /@/.test(value);
@@ -80,45 +86,41 @@ const detectHeaderIndices = (fields) => {
   return null;
 };
 
-const parseContacts = (text) => {
-  const lines = text
+const getNonEmptyLines = (text) =>
+  text
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-  if (lines.length === 0) {
-    return { contacts: [], skipped: 0, error: "入力が空です。" };
-  }
-  const delimiter = detectDelimiter(lines);
-  if (!delimiter) {
-    return {
-      contacts: [],
-      skipped: lines.length,
-      error: "区切り文字(タブ/カンマ/セミコロン)が見つかりません。"
-    };
-  }
 
-  let nameIndex = 0;
-  let emailIndex = 1;
-  let startIndex = 0;
+const guessColumnIndices = (fields) => {
+  if (looksLikeEmail(fields[0]) && fields[1]) {
+    return { emailIndex: 0, nameIndex: 1 };
+  }
+  if (looksLikeEmail(fields[1])) {
+    return { emailIndex: 1, nameIndex: 0 };
+  }
+  return { emailIndex: 1, nameIndex: 0 };
+};
+
+const resolveColumnIndices = (lines, delimiter) => {
   const header = detectHeaderIndices(splitLine(lines[0], delimiter));
   if (header?.isHeader) {
-    nameIndex = header.nameIndex;
-    emailIndex = header.emailIndex;
-    startIndex = 1;
-  } else {
-    const firstRow = splitLine(lines[0], delimiter);
-    if (looksLikeEmail(firstRow[0]) && firstRow[1]) {
-      emailIndex = 0;
-      nameIndex = 1;
-    } else if (looksLikeEmail(firstRow[1])) {
-      emailIndex = 1;
-      nameIndex = 0;
-    }
+    return {
+      nameIndex: header.nameIndex,
+      emailIndex: header.emailIndex,
+      startIndex: 1
+    };
   }
+  const firstRow = splitLine(lines[0], delimiter);
+  const guess = guessColumnIndices(firstRow);
+  return { ...guess, startIndex: 0 };
+};
 
+const parseContactsFromLines = (lines, delimiter, nameIndex, emailIndex, startIndex) => {
   const seen = new Set();
   const contacts = [];
   let skipped = 0;
+
   for (let i = startIndex; i < lines.length; i += 1) {
     const fields = splitLine(lines[i], delimiter);
     const name = (fields[nameIndex] || "").trim();
@@ -132,6 +134,32 @@ const parseContacts = (text) => {
     seen.add(key);
     contacts.push({ name, email });
   }
+
+  return { contacts, skipped };
+};
+
+const parseContacts = (text) => {
+  const lines = getNonEmptyLines(text);
+  if (lines.length === 0) {
+    return { contacts: [], skipped: 0, error: "入力が空です。" };
+  }
+  const delimiter = detectDelimiter(lines);
+  if (!delimiter) {
+    return {
+      contacts: [],
+      skipped: lines.length,
+      error: "区切り文字(タブ/カンマ/セミコロン)が見つかりません。"
+    };
+  }
+
+  const { nameIndex, emailIndex, startIndex } = resolveColumnIndices(lines, delimiter);
+  const { contacts, skipped } = parseContactsFromLines(
+    lines,
+    delimiter,
+    nameIndex,
+    emailIndex,
+    startIndex
+  );
   return { contacts, skipped, error: "" };
 };
 
@@ -185,7 +213,7 @@ copyButton.addEventListener("click", async () => {
     await navigator.clipboard.writeText(output.value || "");
     setStatus("コピーしました");
   } catch (error) {
-    setStatus("コピーに失敗しました");
+    setStatus(`コピーに失敗しました: ${error?.message || error}`);
   }
 });
 
