@@ -304,9 +304,7 @@
 
   const getSelectedSummaryEntries = () => {
     const names = getSelectedCalendarNames();
-    const term = state.searchTerm;
-    const filtered = term ? names.filter((name) => matchesCalendarSearch(name, term)) : names;
-    const entries = filtered.map((name) => {
+    const entries = names.map((name) => {
       const nameKey = normalizeNameKey(name);
       const email = getUniqueEmailForName(nameKey);
       return { name, nameKey, email };
@@ -345,17 +343,15 @@
     if (!listEl) return;
 
     const { entries, total } = getSelectedSummaryEntries();
-    const visibleCount = entries.length;
     if (countEl) {
-      countEl.textContent =
-        state.searchTerm && total > 0 ? `${visibleCount}/${total}` : `${total}`;
+      countEl.textContent = `${total}`;
     }
 
     listEl.textContent = "";
     if (entries.length === 0) {
       const empty = document.createElement("div");
       empty.className = "oce-selected-empty";
-      empty.textContent = total === 0 ? "選択なし" : "一致なし";
+      empty.textContent = "選択なし";
       listEl.appendChild(empty);
       return;
     }
