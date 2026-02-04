@@ -894,7 +894,7 @@
         inputType: "insertText"
       })
     );
-    editor.insertAdjacentText("beforeend", text);
+    editor.append(text);
     editor.dispatchEvent(
       new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" })
     );
@@ -1227,7 +1227,7 @@
     return {
       timestamp: new Date().toISOString(),
       location: globalThis.location?.href || "",
-      topLevel: globalThis.top === globalThis,
+      topLevel: globalThis.top === globalThis.parent,
       readyState: document.readyState,
       selfEmail: ensureSelfEmail(document),
       autofillRuns: state.autofillRuns,
@@ -1416,7 +1416,7 @@
 
   if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-      if (!message || message.type !== "OCE_DEBUG") return;
+      if (message?.type !== "OCE_DEBUG") return;
       try {
         sendResponse(collectDebugInfo());
       } catch (error) {
