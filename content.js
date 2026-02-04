@@ -102,6 +102,15 @@
     stripInvisible(value).replace(/\s+/g, "").trim().toLowerCase();
   const normalizeEmail = (value) => value.trim().toLowerCase();
   const isEmailInput = (value) => value.includes("@");
+  const normalizeSearchTerm = (value) => {
+    const cleaned = normalizeText(value || "").toLowerCase();
+    if (!cleaned) return "";
+    const match = cleaned.match(EMAIL_PATTERN);
+    if (match) return match[0].toLowerCase();
+    const stripped = cleaned.replace(/[<>"',;]+/g, "");
+    if (stripped.includes("@")) return stripped.replace(/\s+/g, "");
+    return cleaned;
+  };
 
   const updateContactsFromList = (list) => {
     const byName = new Map();
@@ -294,14 +303,16 @@
   };
 
   const matchesCalendarSearch = (name, term) => {
-    if (!term) return true;
+    const normalizedTerm = normalizeSearchTerm(term);
+    if (!normalizedTerm) return true;
     const nameKey = normalizeNameKey(name);
-    const termKey = normalizeNameKey(term);
+    const termKey = normalizeNameKey(normalizedTerm);
     if (termKey && nameKey.includes(termKey)) return true;
     const emails = getEmailsForName(nameKey);
     if (!emails) return false;
+    const emailTerm = normalizeEmail(normalizedTerm);
     for (const email of emails) {
-      if (normalizeEmail(email).includes(term)) return true;
+      if (normalizeEmail(email).includes(emailTerm)) return true;
     }
     return false;
   };
@@ -510,7 +521,7 @@
 
 
   const applyCalendarSearch = (raw) => {
-    const term = normalizeText(raw || "").toLowerCase();
+    const term = normalizeSearchTerm(raw);
     const docs = collectDocuments(document);
     state.searchCandidates = 0;
     state.searchMatches = 0;
@@ -1109,7 +1120,9 @@
     const searchInput = document.getElementById(SEARCH_INPUT_ID);
     const searchInputValue = searchInput ? searchInput.value : "";
     const searchBoxPresent = !!document.getElementById(SEARCH_BOX_ID);
-    const effectiveSearchTerm = normalizeText(searchInputValue || state.searchTerm || "");
+    const effectiveSearchTerm = normalizeSearchTerm(
+      searchInputValue || state.searchTerm || ""
+    );
 
     const rowDiagnostics = [];
     let rowsTotal = 0;
@@ -1139,7 +1152,7 @@
           name,
           nameKey,
           emails,
-          match: matchesCalendarSearch(name, effectiveSearchTerm.toLowerCase()),
+          match: matchesCalendarSearch(name, effectiveSearchTerm),
           hasHitClass: row.classList.contains(SEARCH_HIT_CLASS),
           hasMissClass: row.classList.contains(SEARCH_MISS_CLASS)
         });

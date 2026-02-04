@@ -3,7 +3,7 @@
   "name": "outlook chrome extension",
   "version": "0.1.0",
   "description": "Detect overlapping events in Outlook Web calendar.",
-  "permissions": ["activeTab"],
+  "permissions": ["activeTab", "storage"],
   "host_permissions": [
     "https://outlook.office.com/*",
     "https://outlook.office365.com/*",

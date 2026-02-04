@@ -2,6 +2,12 @@ const output = document.getElementById("output");
 const statusEl = document.getElementById("status");
 const refreshButton = document.getElementById("refresh");
 const copyButton = document.getElementById("copy");
+const contactsInput = document.getElementById("contacts-input");
+const contactsSaveButton = document.getElementById("contacts-save");
+const contactsClearButton = document.getElementById("contacts-clear");
+const contactsStatus = document.getElementById("contacts-status");
+const contactsCount = document.getElementById("contacts-count");
+const CONTACTS_STORAGE_KEY = "oceContacts";
 
 const setStatus = (text) => {
   statusEl.textContent = text;
@@ -10,6 +16,141 @@ const setStatus = (text) => {
 const setOutput = (text) => {
   output.value = text;
   copyButton.disabled = text.trim().length === 0;
+};
+
+const setContactsStatus = (text) => {
+  contactsStatus.textContent = text;
+};
+
+const setContactsCount = (count) => {
+  contactsCount.textContent = String(count);
+};
+
+const detectDelimiter = (lines) => {
+  if (lines.some((line) => line.includes("\t"))) return "\t";
+  if (lines.some((line) => line.includes(","))) return ",";
+  if (lines.some((line) => line.includes(";"))) return ";";
+  return null;
+};
+
+const splitLine = (line, delimiter) => {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === "\"") {
+      const next = line[i + 1];
+      if (inQuotes && next === "\"") {
+        current += "\"";
+        i += 1;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (!inQuotes && char === delimiter) {
+      result.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  result.push(current);
+  return result.map((value) => value.trim().replace(/^"|"$/g, ""));
+};
+
+const looksLikeEmail = (value) => /@/.test(value);
+
+const detectHeaderIndices = (fields) => {
+  const lowered = fields.map((value) => value.toLowerCase());
+  const emailIndex = lowered.findIndex(
+    (value) => value.includes("email") || value.includes("mail")
+  );
+  const nameIndex = lowered.findIndex(
+    (value) =>
+      value.includes("name") ||
+      value.includes("full") ||
+      value.includes("氏名") ||
+      value.includes("名前")
+  );
+  if (emailIndex >= 0 && nameIndex >= 0) {
+    return { emailIndex, nameIndex, isHeader: true };
+  }
+  return null;
+};
+
+const parseContacts = (text) => {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) {
+    return { contacts: [], skipped: 0, error: "入力が空です。" };
+  }
+  const delimiter = detectDelimiter(lines);
+  if (!delimiter) {
+    return {
+      contacts: [],
+      skipped: lines.length,
+      error: "区切り文字(タブ/カンマ/セミコロン)が見つかりません。"
+    };
+  }
+
+  let nameIndex = 0;
+  let emailIndex = 1;
+  let startIndex = 0;
+  const header = detectHeaderIndices(splitLine(lines[0], delimiter));
+  if (header?.isHeader) {
+    nameIndex = header.nameIndex;
+    emailIndex = header.emailIndex;
+    startIndex = 1;
+  } else {
+    const firstRow = splitLine(lines[0], delimiter);
+    if (looksLikeEmail(firstRow[0]) && firstRow[1]) {
+      emailIndex = 0;
+      nameIndex = 1;
+    } else if (looksLikeEmail(firstRow[1])) {
+      emailIndex = 1;
+      nameIndex = 0;
+    }
+  }
+
+  const seen = new Set();
+  const contacts = [];
+  let skipped = 0;
+  for (let i = startIndex; i < lines.length; i += 1) {
+    const fields = splitLine(lines[i], delimiter);
+    const name = (fields[nameIndex] || "").trim();
+    const email = (fields[emailIndex] || "").trim();
+    if (!name || !email || !looksLikeEmail(email)) {
+      skipped += 1;
+      continue;
+    }
+    const key = `${name}\n${email}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    contacts.push({ name, email });
+  }
+  return { contacts, skipped, error: "" };
+};
+
+const contactsToText = (contacts) => {
+  const header = "full_name\temail_address";
+  const lines = contacts.map((entry) => `${entry.name}\t${entry.email}`);
+  return [header, ...lines].join("\n");
+};
+
+const loadContactsCount = () => {
+  if (!chrome?.storage?.local) return;
+  chrome.storage.local.get(CONTACTS_STORAGE_KEY, (result) => {
+    const list = result[CONTACTS_STORAGE_KEY];
+    const contacts = Array.isArray(list) ? list : [];
+    setContactsCount(contacts.length);
+    if (contacts.length > 0) {
+      contactsInput.value = contactsToText(contacts);
+    }
+  });
 };
 
 const fetchDebugInfo = async () => {
@@ -48,4 +189,38 @@ copyButton.addEventListener("click", async () => {
   }
 });
 
+contactsSaveButton.addEventListener("click", () => {
+  setContactsStatus("");
+  const text = contactsInput.value || "";
+  const { contacts, skipped, error } = parseContacts(text);
+  if (error) {
+    setContactsStatus(error);
+    return;
+  }
+  if (!chrome?.storage?.local) {
+    setContactsStatus("保存先が利用できません。");
+    return;
+  }
+  chrome.storage.local.set({ [CONTACTS_STORAGE_KEY]: contacts }, () => {
+    setContactsCount(contacts.length);
+    contactsInput.value = contactsToText(contacts);
+    setContactsStatus(
+      `保存しました (${contacts.length}件, スキップ${skipped}件)`
+    );
+  });
+});
+
+contactsClearButton.addEventListener("click", () => {
+  contactsInput.value = "";
+  if (!chrome?.storage?.local) {
+    setContactsStatus("保存先が利用できません。");
+    return;
+  }
+  chrome.storage.local.remove(CONTACTS_STORAGE_KEY, () => {
+    setContactsCount(0);
+    setContactsStatus("クリアしました");
+  });
+});
+
+loadContactsCount();
 void fetchDebugInfo();
