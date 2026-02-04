@@ -10,16 +10,16 @@
   top: 12px;
   right: 16px;
   z-index: 2147483647;
-  border: 1px solid var(--oce-accent-strong);
-  background: var(--oce-accent);
-  color: #ffffff;
-  padding: 8px 12px;
+  border: 1px solid #c8c6c4;
+  background: #ffffff;
+  color: #323130;
+  padding: 6px 10px;
   font-size: 12px;
-  font-weight: 600;
-  border-radius: 8px;
+  font-weight: 500;
+  border-radius: 6px;
   cursor: pointer;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
-  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  box-shadow: none;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 .oce-conflict-host {
@@ -37,14 +37,14 @@
 }
 
 #oce-conflict-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+  background: #f3f2f1;
+  border-color: #a19f9d;
 }
 
 #oce-conflict-button[data-active="true"] {
-  background: var(--oce-bg);
-  color: var(--oce-text);
-  border-color: var(--oce-accent);
+  background: #f3f2f1;
+  border-color: #a19f9d;
+  color: #323130;
 }
 
 #oce-conflict-toast {
