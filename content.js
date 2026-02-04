@@ -28,6 +28,7 @@
   const ATTENDEE_AUTOFILLING_ATTR = "data-oce-attendees-filling";
   const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
   const RECENT_INPUT_TTL_MS = 20000;
+  const CONTACTS_STORAGE_KEY = "oceContacts";
 
   const state = {
     active: false,
@@ -158,6 +159,7 @@
     if (!emails || emails.size !== 1) return "";
     return [...emails][0];
   };
+
   const sleep = (ms) =>
     new Promise((resolve) => {
       window.setTimeout(resolve, ms);
@@ -231,7 +233,7 @@
       })
       .filter((name) => name && !IGNORE_CALENDAR_NAMES.has(name))
       .filter((name) => {
-        const key = normalizeText(name);
+        const key = normalizeNameKey(name);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -244,18 +246,63 @@
     docs.forEach((doc) => {
       buttons.push(...doc.querySelectorAll("button[role=\"option\"]"));
     });
-    return buttons.filter((button) => button.querySelector(".ATH58"));
+    return buttons;
+  };
+
+  const findCalendarListRootInDoc = (doc) => {
+    const lists = [...doc.querySelectorAll("ul")]
+      .map((ul) => ({
+        ul,
+        count: ul.querySelectorAll("button[role=\"option\"]").length
+      }))
+      .filter((entry) => entry.count >= 5)
+      .sort((a, b) => b.count - a.count);
+    return lists.length > 0 ? lists[0] : null;
   };
 
   const findCalendarListRoot = () => {
     const docs = collectDocuments(document);
-    for (const doc of docs) {
-      const list = [...doc.querySelectorAll("ul")].find((ul) =>
-        ul.querySelector("button[role=\"option\"] .ATH58")
-      );
-      if (list) return list;
+    let best = null;
+    docs.forEach((doc) => {
+      const candidate = findCalendarListRootInDoc(doc);
+      if (!candidate) return;
+      if (!best || candidate.count > best.count) best = candidate;
+    });
+    return best ? best.ul : null;
+  };
+
+  
+
+  const getCalendarRows = (root) => {
+    const buttons = [...root.querySelectorAll("button[role=\"option\"]")].filter(
+      (button) =>
+        !button.closest(
+          ".ms-FloatingSuggestions, .ms-Suggestions, .ms-BasePicker, .ms-BaseFloatingPicker"
+        )
+    );
+    const rows = new Set();
+    buttons.forEach((button) => {
+      const row =
+        button.closest(".GsziR") ||
+        button.closest("div[draggable]") ||
+        button.closest("li") ||
+        button;
+      rows.add(row);
+    });
+    return [...rows];
+  };
+
+  const matchesCalendarSearch = (name, term) => {
+    if (!term) return true;
+    const nameKey = normalizeNameKey(name);
+    const termKey = normalizeNameKey(term);
+    if (termKey && nameKey.includes(termKey)) return true;
+    const emails = getEmailsForName(nameKey);
+    if (!emails) return false;
+    for (const email of emails) {
+      if (normalizeEmail(email).includes(term)) return true;
     }
-    return null;
+    return false;
   };
 
   const SHOW_ALL_LABELS = ["Show all", "すべて表示"];
@@ -513,7 +560,7 @@
     const input = document.createElement("input");
     input.id = SEARCH_INPUT_ID;
     input.type = "search";
-    input.placeholder = "検索（名前）";
+    input.placeholder = "検索（名前/メール）";
     input.autocomplete = "off";
     input.spellcheck = false;
     input.value = state.searchTerm;
@@ -597,9 +644,9 @@
       pills
         .map((pill) => {
           const label = pill.getAttribute("aria-label");
-          if (label) return normalizeText(label);
+          if (label) return normalizeNameKey(label);
           const text = pill.querySelector(".textContainer-390");
-          return text ? normalizeText(text.textContent || "") : "";
+          return text ? normalizeNameKey(text.textContent || "") : "";
         })
         .filter(Boolean)
     );
@@ -838,7 +885,7 @@
   const waitForPillInsert = async (editor, beforeCount, input, timeoutMs = 2000) => {
     const normalizedInput = isEmailInput(input)
       ? normalizeEmail(input)
-      : normalizeText(input);
+      : normalizeNameKey(input);
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const currentCount = editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length;
@@ -893,11 +940,53 @@
     return false;
   };
 
-  const buildAutofillKey = (inputs) => {
-    const normalized = inputs
-      .map((input) =>
-        isEmailInput(input) ? normalizeEmail(input) : normalizeText(input)
-      )
+  const resolveAttendeeInputs = (names, selfEmail) => {
+    const entries = [];
+    names.forEach((name) => {
+      const nameKey = normalizeNameKey(name);
+      const email = getUniqueEmailForName(nameKey);
+      if (email) {
+        entries.push({
+          input: email,
+          nameKey,
+          emailKey: normalizeEmail(email),
+          source: "contact"
+        });
+      } else {
+        entries.push({ input: name, nameKey, emailKey: "", source: "name" });
+      }
+    });
+
+    if (selfEmail) {
+      const emailKey = normalizeEmail(selfEmail);
+      const namesForEmail = getNamesForEmail(emailKey);
+      const nameKey =
+        namesForEmail && namesForEmail.size === 1 ? [...namesForEmail][0] : "";
+      entries.push({ input: selfEmail, nameKey, emailKey, source: "self" });
+    }
+
+    return entries;
+  };
+
+  const hasExistingForEmail = (emailKey, existingNames) => {
+    if (!emailKey) return false;
+    const names = getNamesForEmail(emailKey);
+    if (!names) return false;
+    for (const name of names) {
+      if (existingNames.has(name)) return true;
+    }
+    return false;
+  };
+
+  const addExistingForEmail = (emailKey, existingNames) => {
+    const names = getNamesForEmail(emailKey);
+    if (!names) return;
+    names.forEach((name) => existingNames.add(name));
+  };
+
+  const buildAutofillKey = (entries) => {
+    const normalized = entries
+      .map((entry) => entry.emailKey || entry.nameKey || "")
       .filter(Boolean)
       .sort();
     return normalized.join("|");
@@ -906,6 +995,7 @@
   const fillAttendees = async (editor) => {
     if (!editor || editor.getAttribute(ATTENDEE_AUTOFILL_ATTR) === "true") return;
     if (editor.getAttribute(ATTENDEE_AUTOFILLING_ATTR) === "true") return;
+    if (!state.contactsLoaded && chrome?.storage?.local) return;
     const hasPills =
       editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length > 0;
     const hasText = !isEffectivelyEmpty(editor.textContent || "");
@@ -913,11 +1003,10 @@
 
     const names = getSelectedCalendarNames();
     const selfEmail = ensureSelfEmail(editor.ownerDocument);
-    const inputs = [...names];
-    if (selfEmail) inputs.push(selfEmail);
-    if (inputs.length === 0) return;
+    const entries = resolveAttendeeInputs(names, selfEmail);
+    if (entries.length === 0) return;
 
-    const autofillKey = buildAutofillKey(inputs);
+    const autofillKey = buildAutofillKey(entries);
     const now = Date.now();
     if (state.lastAutofillKey === autofillKey && now - state.lastAutofillAt < 8000) {
       state.autofillSkips += 1;
@@ -927,7 +1016,7 @@
     state.lastAutofillKey = autofillKey;
     state.lastAutofillAt = now;
     state.autofillRuns += 1;
-    state.autofillLastInputs = inputs.slice(0, 10);
+    state.autofillLastInputs = entries.map((entry) => entry.input).slice(0, 10);
     editor.setAttribute(ATTENDEE_AUTOFILL_ATTR, "true");
     editor.setAttribute(ATTENDEE_AUTOFILLING_ATTR, "true");
 
@@ -935,16 +1024,18 @@
     const seen = new Set();
 
     try {
-      for (const input of inputs) {
-        const key = isEmailInput(input) ? normalizeEmail(input) : normalizeText(input);
+      for (const entry of entries) {
+        const key = entry.emailKey || entry.nameKey;
         if (wasRecentlyInserted(key)) continue;
         if (seen.has(key)) continue;
         seen.add(key);
-        if (!isEmailInput(input) && existing.has(key)) continue;
-        const inserted = await addAttendeeByName(editor, input);
+        if (entry.nameKey && existing.has(entry.nameKey)) continue;
+        if (entry.emailKey && hasExistingForEmail(entry.emailKey, existing)) continue;
+        const inserted = await addAttendeeByName(editor, entry.input);
         if (inserted) {
           markInserted(key);
-          if (!isEmailInput(input)) existing.add(key);
+          if (entry.nameKey) existing.add(entry.nameKey);
+          if (entry.emailKey) addExistingForEmail(entry.emailKey, existing);
         }
         await sleep(120);
       }
@@ -985,6 +1076,52 @@
       ownerLocation: editor.ownerDocument?.location?.href || ""
     }));
 
+    const searchInput = document.getElementById(SEARCH_INPUT_ID);
+    const searchInputValue = searchInput ? searchInput.value : "";
+    const searchBoxPresent = !!document.getElementById(SEARCH_BOX_ID);
+    const effectiveSearchTerm = normalizeText(searchInputValue || state.searchTerm || "");
+
+    const rowDiagnostics = [];
+    let rowsTotal = 0;
+    let optionTotal = 0;
+    const listRootDiagnostics = [];
+    docs.forEach((doc) => {
+      optionTotal += doc.querySelectorAll("button[role=\"option\"]").length;
+      const listRoot = findCalendarListRootInDoc(doc);
+      if (listRoot) {
+        listRootDiagnostics.push({
+          optionCount: listRoot.count,
+          location: doc.location?.href || ""
+        });
+      }
+      const rows = getCalendarRows(listRoot ? listRoot.ul : doc);
+      rowsTotal += rows.length;
+      for (const row of rows) {
+        if (rowDiagnostics.length >= 20) break;
+        const label = row.querySelector(".ATH58");
+        const raw = label ? label.textContent : row.textContent;
+        const name = normalizeText(raw || "");
+        const nameKey = normalizeNameKey(name);
+        const emails = getEmailsForName(nameKey)
+          ? [...getEmailsForName(nameKey)]
+          : [];
+        rowDiagnostics.push({
+          name,
+          nameKey,
+          emails,
+          match: matchesCalendarSearch(name, effectiveSearchTerm.toLowerCase()),
+          hasHitClass: row.classList.contains(SEARCH_HIT_CLASS),
+          hasMissClass: row.classList.contains(SEARCH_MISS_CLASS)
+        });
+      }
+    });
+
+    const contactSamples = [];
+    for (const [name, emails] of state.contactsByName.entries()) {
+      if (contactSamples.length >= 10) break;
+      contactSamples.push({ nameKey: name, emails: [...emails] });
+    }
+
     const iframes = [...document.querySelectorAll("iframe")].map((frame) => {
       let sameOrigin = false;
       let href = "";
@@ -1010,9 +1147,23 @@
       recentInputsCount: state.recentInputs.size,
       recentInputsSample: [...state.recentInputs.keys()].slice(0, 10),
       lastAutofillInputs: state.autofillLastInputs,
+      contactsCount: state.contactsCount,
+      contactsByNameCount: state.contactsByName.size,
+      contactsByEmailCount: state.contactsByEmail.size,
+      contactsLoaded: state.contactsLoaded,
+      contactsSamples: contactSamples,
       searchTerm: state.searchTerm,
+      searchInputValue,
+      searchBoxPresent,
+      effectiveSearchTerm,
       searchCandidates: state.searchCandidates,
       searchMatches: state.searchMatches,
+      searchHitClassCount: document.querySelectorAll(`.${SEARCH_HIT_CLASS}`).length,
+      searchMissClassCount: document.querySelectorAll(`.${SEARCH_MISS_CLASS}`).length,
+      searchOptionTotal: optionTotal,
+      searchRowsTotal: rowsTotal,
+      searchListRoots: listRootDiagnostics,
+      searchRowDiagnostics: rowDiagnostics,
       selectedNames: getSelectedCalendarNames(),
       editorCount: editors.length,
       editorSummaries,
@@ -1156,6 +1307,8 @@
   };
 
   const boot = () => {
+    loadContacts();
+    watchContacts();
     ensureButton();
     ensureSearchBox();
     ensureSelectedSummary();

@@ -12,14 +12,34 @@
       <p>現在のタブからデバッグ情報を取得します。</p>
     </header>
 
-    <div class="actions">
-      <button id="refresh" type="button">取得</button>
-      <button id="copy" type="button" disabled>コピー</button>
-    </div>
+    <section class="panel">
+      <h2>連絡先CSV/TSV</h2>
+      <p>メールアドレスと本名のペアを貼り付けて保存します。</p>
+      <textarea
+        id="contacts-input"
+        rows="6"
+        spellcheck="false"
+        placeholder="例: taro.yamada@example.com,山田 太郎"
+      ></textarea>
+      <div class="actions">
+        <button id="contacts-save" type="button">保存</button>
+        <button id="contacts-clear" type="button">クリア</button>
+      </div>
+      <div class="status" id="contacts-status"></div>
+      <div class="count">登録件数: <span id="contacts-count">0</span></div>
+    </section>
 
-    <div class="status" id="status"></div>
+    <section class="panel">
+      <h2>Debug</h2>
+      <div class="actions">
+        <button id="refresh" type="button">取得</button>
+        <button id="copy" type="button" disabled>コピー</button>
+      </div>
 
-    <textarea id="output" readonly rows="18" spellcheck="false"></textarea>
+      <div class="status" id="status"></div>
+
+      <textarea id="output" readonly rows="12" spellcheck="false"></textarea>
+    </section>
 
     <script src="popup.js"></script>
   </body>
