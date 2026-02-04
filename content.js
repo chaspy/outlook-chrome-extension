@@ -350,9 +350,23 @@
     }
   };
 
+  const findWideAncestor = (el) => {
+    const minWidth = Math.min(window.innerWidth * 0.6, 600);
+    let current = el;
+    while (current && current !== document.body) {
+      const rect = current.getBoundingClientRect();
+      if (rect.width >= minWidth && rect.height <= 120) return current;
+      current = current.parentElement;
+    }
+    return null;
+  };
+
   const findConflictButtonAnchor = () => {
-    const tablist = document.querySelector("#tablist") || document.querySelector("[role=\"tablist\"]");
+    const tablist =
+      document.querySelector("#tablist") || document.querySelector("[role=\"tablist\"]");
     if (!tablist) return null;
+    const wide = findWideAncestor(tablist);
+    if (wide) return wide;
     return tablist.parentElement || tablist;
   };
 

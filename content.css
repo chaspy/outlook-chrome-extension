@@ -24,10 +24,11 @@
 
 #oce-conflict-button.oce-conflict-inline {
   position: absolute;
-  top: 6px;
+  top: 8px;
   right: 12px;
   z-index: 1000;
   box-shadow: none;
+  white-space: nowrap;
 }
 
 #oce-conflict-button:hover {
