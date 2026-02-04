@@ -306,6 +306,7 @@
   };
 
   const SHOW_ALL_LABELS = ["Show all", "すべて表示"];
+  const TABLIST_SELECTOR = "#tablist, [role=\"tablist\"]";
 
   const isShowAllLabel = (text) => {
     const normalized = normalizeText(text || "").toLowerCase();
@@ -347,6 +348,29 @@
     if (clicked) {
       state.showAllClicked = true;
     }
+  };
+
+  const findConflictButtonAnchor = () => {
+    const tablist = document.querySelector("#tablist") || document.querySelector("[role=\"tablist\"]");
+    if (!tablist) return null;
+    return tablist.parentElement || tablist;
+  };
+
+  const placeConflictButton = (button) => {
+    const anchor = findConflictButtonAnchor();
+    if (anchor && anchor.isConnected) {
+      const computed = window.getComputedStyle(anchor);
+      if (computed.position === "static") {
+        anchor.style.position = "relative";
+      }
+      button.classList.add("oce-conflict-inline");
+      if (button.parentElement !== anchor) {
+        anchor.appendChild(button);
+      }
+      return;
+    }
+    button.classList.remove("oce-conflict-inline");
+    if (!button.isConnected) document.body.appendChild(button);
   };
 
   const getSelectedSummaryEntries = () => {
@@ -1279,7 +1303,11 @@
   };
 
   const ensureButton = () => {
-    if (document.getElementById(BUTTON_ID)) return;
+    const existing = document.getElementById(BUTTON_ID);
+    if (existing) {
+      placeConflictButton(existing);
+      return;
+    }
     if (!document.querySelector(CALENDAR_ROOT_SELECTOR)) return;
 
     const button = document.createElement("button");
@@ -1292,7 +1320,7 @@
       toggleDetection();
     });
 
-    document.body.appendChild(button);
+    placeConflictButton(button);
   };
 
   const startObserver = () => {
