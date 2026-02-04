@@ -28,6 +28,7 @@
   const ATTENDEE_AUTOFILLING_ATTR = "data-oce-attendees-filling";
   const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
   const RECENT_INPUT_TTL_MS = 20000;
+  const CONFLICT_HOST_ID = "oce-conflict-host";
   const CONTACTS_STORAGE_KEY = "oceContacts";
 
   const state = {
@@ -306,6 +307,8 @@
   };
 
   const SHOW_ALL_LABELS = ["Show all", "すべて表示"];
+  const RIBBON_CONTAINER_SELECTOR =
+    "#innerRibbonContainer, [data-automation-type=\"RibbonBottomBarContainer\"]";
   const TABLIST_SELECTOR = "#tablist, [role=\"tablist\"]";
 
   const isShowAllLabel = (text) => {
@@ -350,33 +353,22 @@
     }
   };
 
-  const findWideAncestor = (el) => {
-    const minWidth = Math.min(window.innerWidth * 0.6, 600);
-    let current = el;
-    while (current && current !== document.body) {
-      const rect = current.getBoundingClientRect();
-      if (rect.width >= minWidth && rect.height <= 120) return current;
-      current = current.parentElement;
-    }
-    return null;
-  };
-
   const findConflictButtonAnchor = () => {
-    const tablist =
-      document.querySelector("#tablist") || document.querySelector("[role=\"tablist\"]");
-    if (!tablist) return null;
-    const wide = findWideAncestor(tablist);
-    if (wide) return wide;
-    return tablist.parentElement || tablist;
+    const ribbonContainer = document.querySelector(RIBBON_CONTAINER_SELECTOR);
+    if (!ribbonContainer) return null;
+    let host = ribbonContainer.querySelector(`#${CONFLICT_HOST_ID}`);
+    if (!host) {
+      host = document.createElement("div");
+      host.id = CONFLICT_HOST_ID;
+      host.className = "oce-conflict-host";
+      ribbonContainer.appendChild(host);
+    }
+    return host;
   };
 
   const placeConflictButton = (button) => {
     const anchor = findConflictButtonAnchor();
     if (anchor && anchor.isConnected) {
-      const computed = window.getComputedStyle(anchor);
-      if (computed.position === "static") {
-        anchor.style.position = "relative";
-      }
       button.classList.add("oce-conflict-inline");
       if (button.parentElement !== anchor) {
         anchor.appendChild(button);
