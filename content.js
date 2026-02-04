@@ -42,7 +42,13 @@
     searchTerm: "",
     lastSearchAppliedAt: 0,
     searchCandidates: 0,
-    searchMatches: 0
+    searchMatches: 0,
+    contactsByName: new Map(),
+    contactsByEmail: new Map(),
+    contactsCount: 0,
+    contactsLoaded: false,
+    showAllClicked: false,
+    showAllAttemptedAt: 0
   };
 
   let selectionObserver = null;
@@ -252,6 +258,50 @@
     return null;
   };
 
+  const SHOW_ALL_LABELS = ["Show all", "すべて表示"];
+
+  const isShowAllLabel = (text) => {
+    const normalized = normalizeText(text || "").toLowerCase();
+    if (!normalized) return false;
+    return SHOW_ALL_LABELS.some((label) =>
+      normalized.includes(normalizeText(label).toLowerCase())
+    );
+  };
+
+  const isVisibleButton = (button) =>
+    !!button && button.getClientRects().length > 0 && button.offsetParent !== null;
+
+  const findShowAllButtons = (doc) => {
+    const listRoot = findCalendarListRootInDoc(doc);
+    const searchRoot = listRoot?.ul?.parentElement || listRoot?.ul || doc;
+    return [...searchRoot.querySelectorAll("button")].filter((button) =>
+      isShowAllLabel(button.textContent)
+    );
+  };
+
+  const ensureShowAllExpanded = () => {
+    if (state.showAllClicked) return;
+    const now = Date.now();
+    if (now - state.showAllAttemptedAt < 800) return;
+    state.showAllAttemptedAt = now;
+
+    const docs = collectDocuments(document);
+    let clicked = false;
+    docs.forEach((doc) => {
+      findShowAllButtons(doc).forEach((button) => {
+        if (button.disabled) return;
+        if (button.getAttribute("aria-disabled") === "true") return;
+        if (!isVisibleButton(button)) return;
+        button.click();
+        clicked = true;
+      });
+    });
+
+    if (clicked) {
+      state.showAllClicked = true;
+    }
+  };
+
   const getSelectedSummaryEntries = () => {
     const names = getSelectedCalendarNames();
     const term = state.searchTerm;
@@ -354,6 +404,7 @@
       ensureSearchBox();
       ensureSelectedSummary();
       ensureSelectionObserver();
+      ensureShowAllExpanded();
       if (state.searchTerm) {
         const now = Date.now();
         if (now - state.lastSearchAppliedAt > 250) {
@@ -1113,6 +1164,7 @@
     ensureSearchBox();
     ensureSelectedSummary();
     ensureSelectionObserver();
+    ensureShowAllExpanded();
     maybeAutofillAttendees();
     startObserver();
   };
