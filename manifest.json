@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "outlook chrome extension",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Detect overlapping events in Outlook Web calendar.",
   "permissions": ["activeTab", "storage"],
   "host_permissions": [

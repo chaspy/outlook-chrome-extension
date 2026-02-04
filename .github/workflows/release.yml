@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare release metadata
+        id: meta
+        run: |
+          last_tag=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          if [ -z "$last_tag" ]; then
+            base_version=$(node -p "require('./manifest.json').version || '0.0.1'")
+            version="$base_version"
+          else
+            ver="${last_tag#v}"
+            IFS='.' read -r major minor patch <<< "$ver"
+            patch=$((patch + 1))
+            version="${major}.${minor}.${patch}"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+          echo "last_tag=${last_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes and changelog
+        run: |
+          tag="${{ steps.meta.outputs.tag }}"
+          last_tag="${{ steps.meta.outputs.last_tag }}"
+          date="$(date -u +%Y-%m-%d)"
+
+          if [ -n "$last_tag" ]; then
+            git log "${last_tag}"..HEAD --pretty=format:"- %s (%h)" > .release-notes.tmp
+          else
+            git log --pretty=format:"- %s (%h)" > .release-notes.tmp
+          fi
+
+          {
+            echo "## ${tag} (${date})"
+            echo
+            cat .release-notes.tmp
+          } > RELEASE_NOTES.md
+
+          cp RELEASE_NOTES.md CHANGELOG.md
+
+      - name: Package extension
+        run: |
+          mkdir -p dist
+          files=(manifest.json content.js content.css popup.html popup.js popup.css)
+          if [ -d icons ]; then
+            files+=(icons)
+          fi
+          if [ -d assets ]; then
+            files+=(assets)
+          fi
+          zip -r "dist/outlook-chrome-extension-${{ steps.meta.outputs.tag }}.zip" "${files[@]}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.tag }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            dist/outlook-chrome-extension-${{ steps.meta.outputs.tag }}.zip
+            CHANGELOG.md
