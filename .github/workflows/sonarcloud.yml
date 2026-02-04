@@ -46,6 +46,6 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
-            -Dsonar.organization=${{ secrets.SONAR_ORG }}
+            -Dsonar.projectKey=chaspy_outlook-chrome-extension
+            -Dsonar.organization=chaspy
             -Dsonar.javascript.node.maxspace=4096
