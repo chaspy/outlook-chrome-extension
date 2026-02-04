@@ -4,6 +4,9 @@
   const CONFLICT_CLASS = "oce-conflict";
   const SEARCH_BOX_ID = "oce-calendar-search";
   const SEARCH_INPUT_ID = "oce-calendar-search-input";
+  const SELECTED_SUMMARY_ID = "oce-calendar-selected-summary";
+  const SELECTED_COUNT_ID = "oce-calendar-selected-count";
+  const SELECTED_LIST_ID = "oce-calendar-selected-list";
   const SEARCH_HIT_CLASS = "oce-calendar-search-hit";
   const SEARCH_MISS_CLASS = "oce-calendar-search-miss";
   const CALENDAR_ROOT_SELECTOR = ".templateColumnContent, [data-calitemid]";
@@ -37,9 +40,15 @@
     autofillLastInputs: [],
     recentInputs: new Map(),
     searchTerm: "",
+    lastSearchAppliedAt: 0,
     searchCandidates: 0,
     searchMatches: 0
   };
+
+  let selectionObserver = null;
+  let selectionObserverRoot = null;
+  let pendingUpdate = false;
+  let pendingSelectionUpdate = false;
 
   const showToast = (message) => {
     const existing = document.getElementById(TOAST_ID);
@@ -81,9 +90,68 @@
   const isEffectivelyEmpty = (value) => stripInvisible(value).length === 0;
   const normalizeText = (value) =>
     stripInvisible(value).replace(/\s+/g, " ").trim();
+  const normalizeNameKey = (value) =>
+    stripInvisible(value).replace(/\s+/g, "").trim().toLowerCase();
   const normalizeEmail = (value) => value.trim().toLowerCase();
   const isEmailInput = (value) => value.includes("@");
 
+  const updateContactsFromList = (list) => {
+    const byName = new Map();
+    const byEmail = new Map();
+    let count = 0;
+    if (Array.isArray(list)) {
+      list.forEach((entry) => {
+        if (!entry) return;
+        const name = normalizeText(entry.name || "");
+        const nameKey = normalizeNameKey(name);
+        const email = normalizeEmail(entry.email || "");
+        if (!nameKey || !email) return;
+        if (!byName.has(nameKey)) byName.set(nameKey, new Set());
+        byName.get(nameKey).add(email);
+        if (!byEmail.has(email)) byEmail.set(email, new Set());
+        byEmail.get(email).add(nameKey);
+        count += 1;
+      });
+    }
+    state.contactsByName = byName;
+    state.contactsByEmail = byEmail;
+    state.contactsCount = count;
+    state.contactsLoaded = true;
+  };
+
+  const loadContacts = () => {
+    if (!chrome?.storage?.local) {
+      state.contactsLoaded = true;
+      return;
+    }
+    chrome.storage.local.get(CONTACTS_STORAGE_KEY, (result) => {
+      updateContactsFromList(result[CONTACTS_STORAGE_KEY]);
+      if (state.searchTerm) applyCalendarSearch(state.searchTerm);
+      renderSelectedSummary();
+      maybeAutofillAttendees();
+    });
+  };
+
+  const watchContacts = () => {
+    if (!chrome?.storage?.onChanged) return;
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      if (!changes[CONTACTS_STORAGE_KEY]) return;
+      updateContactsFromList(changes[CONTACTS_STORAGE_KEY].newValue);
+      if (state.searchTerm) applyCalendarSearch(state.searchTerm);
+      renderSelectedSummary();
+      maybeAutofillAttendees();
+    });
+  };
+
+  const getEmailsForName = (nameKey) => state.contactsByName.get(nameKey);
+  const getNamesForEmail = (emailKey) => state.contactsByEmail.get(emailKey);
+
+  const getUniqueEmailForName = (nameKey) => {
+    const emails = getEmailsForName(nameKey);
+    if (!emails || emails.size !== 1) return "";
+    return [...emails][0];
+  };
   const sleep = (ms) =>
     new Promise((resolve) => {
       window.setTimeout(resolve, ms);
@@ -184,6 +252,139 @@
     return null;
   };
 
+  const getSelectedSummaryEntries = () => {
+    const names = getSelectedCalendarNames();
+    const term = state.searchTerm;
+    const filtered = term ? names.filter((name) => matchesCalendarSearch(name, term)) : names;
+    const entries = filtered.map((name) => {
+      const nameKey = normalizeNameKey(name);
+      const email = getUniqueEmailForName(nameKey);
+      return { name, nameKey, email };
+    });
+    return { entries, total: names.length };
+  };
+
+  const findCalendarButtonsForName = (nameKey) => {
+    const buttons = getCalendarOptionButtons();
+    return buttons.filter((button) => {
+      const label = button.querySelector(".ATH58");
+      const raw = label ? label.textContent : button.textContent;
+      const key = normalizeNameKey(raw || "");
+      return key === nameKey;
+    });
+  };
+
+  const deselectCalendar = (nameKey) => {
+    const buttons = findCalendarButtonsForName(nameKey);
+    const target = buttons.find(
+      (button) => button.getAttribute("aria-selected") === "true"
+    );
+    if (target) {
+      target.click();
+      showToast("選択を解除しました");
+      return true;
+    }
+    return false;
+  };
+
+  const renderSelectedSummary = () => {
+    const summary = document.getElementById(SELECTED_SUMMARY_ID);
+    if (!summary) return;
+    const countEl = summary.querySelector(`#${SELECTED_COUNT_ID}`);
+    const listEl = summary.querySelector(`#${SELECTED_LIST_ID}`);
+    if (!listEl) return;
+
+    const { entries, total } = getSelectedSummaryEntries();
+    const visibleCount = entries.length;
+    if (countEl) {
+      countEl.textContent =
+        state.searchTerm && total > 0 ? `${visibleCount}/${total}` : `${total}`;
+    }
+
+    listEl.textContent = "";
+    if (entries.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "oce-selected-empty";
+      empty.textContent = total === 0 ? "選択なし" : "一致なし";
+      listEl.appendChild(empty);
+      return;
+    }
+
+    entries.forEach(({ name, nameKey, email }) => {
+      const pill = document.createElement("div");
+      pill.className = "oce-selected-pill";
+
+      const nameRow = document.createElement("div");
+      nameRow.className = "oce-selected-row";
+
+      const nameText = document.createElement("span");
+      nameText.textContent = name;
+      nameRow.appendChild(nameText);
+
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "oce-selected-remove";
+      removeButton.textContent = "解除";
+      removeButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!deselectCalendar(nameKey)) {
+          showToast("解除できませんでした");
+        }
+      });
+      nameRow.appendChild(removeButton);
+
+      pill.appendChild(nameRow);
+      if (email) {
+        const emailSpan = document.createElement("span");
+        emailSpan.className = "oce-selected-email";
+        emailSpan.textContent = email;
+        pill.appendChild(emailSpan);
+      }
+      listEl.appendChild(pill);
+    });
+  };
+
+  const scheduleUpdate = () => {
+    if (pendingUpdate) return;
+    pendingUpdate = true;
+    const run = () => {
+      pendingUpdate = false;
+      ensureButton();
+      ensureSearchBox();
+      ensureSelectedSummary();
+      ensureSelectionObserver();
+      if (state.searchTerm) {
+        const now = Date.now();
+        if (now - state.lastSearchAppliedAt > 250) {
+          applyCalendarSearch(state.searchTerm);
+        }
+      }
+      maybeAutofillAttendees();
+    };
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(run);
+    } else {
+      window.setTimeout(run, 100);
+    }
+  };
+
+  const scheduleSelectionUpdate = () => {
+    if (pendingSelectionUpdate) return;
+    pendingSelectionUpdate = true;
+    const run = () => {
+      pendingSelectionUpdate = false;
+      renderSelectedSummary();
+      maybeAutofillAttendees();
+    };
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(run);
+    } else {
+      window.setTimeout(run, 100);
+    }
+  };
+
+
   const applyCalendarSearch = (raw) => {
     const term = normalizeText(raw || "").toLowerCase();
     const docs = collectDocuments(document);
@@ -192,14 +393,12 @@
 
     let firstMatch = null;
 
-    const getRows = (root) =>
-      [...root.querySelectorAll(".GsziR")].filter((row) =>
-        row.querySelector("button[role=\"option\"] .ATH58")
-      );
-
     docs.forEach((doc) => {
-      const groups = [...doc.querySelectorAll("li[aria-label]")];
-      const rows = getRows(doc);
+      const listRoot = findCalendarListRootInDoc(doc);
+      if (!listRoot) return;
+      const listContainer = listRoot.ul;
+      const groups = [...listContainer.querySelectorAll("li[aria-label]")];
+      const rows = getCalendarRows(listContainer);
 
       if (!term) {
         groups.forEach((group) => {
@@ -219,8 +418,9 @@
       const groupHasMatch = new Map();
       rows.forEach((row) => {
         const label = row.querySelector(".ATH58");
-        const name = normalizeText(label ? label.textContent || "" : "");
-        const match = name.toLowerCase().includes(term);
+        const raw = label ? label.textContent : row.textContent;
+        const name = normalizeText(raw || "");
+        const match = matchesCalendarSearch(name, term);
         row.classList.toggle(SEARCH_HIT_CLASS, match);
         row.classList.toggle(SEARCH_MISS_CLASS, !match);
         row
@@ -239,7 +439,7 @@
       });
 
       groups.forEach((group) => {
-        const hasRows = group.querySelector(".GsziR");
+        const hasRows = group.querySelector("button[role=\"option\"]");
         if (!hasRows) return;
         const hasMatch = groupHasMatch.get(group) === true;
         group.classList.toggle(SEARCH_HIT_CLASS, hasMatch);
@@ -251,6 +451,8 @@
       firstMatch.scrollIntoView({ block: "center", inline: "nearest" });
     }
     state.searchTerm = term;
+    state.lastSearchAppliedAt = Date.now();
+    renderSelectedSummary();
   };
 
   const ensureSearchBox = () => {
@@ -282,6 +484,64 @@
     container.appendChild(input);
     listRoot.parentElement?.insertBefore(container, listRoot);
     if (state.searchTerm) applyCalendarSearch(state.searchTerm);
+  };
+
+  const ensureSelectedSummary = () => {
+    if (document.getElementById(SELECTED_SUMMARY_ID)) return;
+    const searchBox = document.getElementById(SEARCH_BOX_ID);
+    if (!searchBox) return;
+
+    const summary = document.createElement("div");
+    summary.id = SELECTED_SUMMARY_ID;
+
+    const header = document.createElement("div");
+    header.className = "oce-selected-header";
+
+    const title = document.createElement("div");
+    title.className = "oce-selected-title";
+    const titleLabel = document.createElement("span");
+    titleLabel.textContent = "選択中";
+
+    const count = document.createElement("span");
+    count.id = SELECTED_COUNT_ID;
+    count.textContent = "0";
+    title.appendChild(titleLabel);
+    title.appendChild(count);
+
+    header.appendChild(title);
+
+    const list = document.createElement("div");
+    list.id = SELECTED_LIST_ID;
+    list.className = "oce-selected-list";
+
+    summary.appendChild(header);
+    summary.appendChild(list);
+
+    searchBox.insertAdjacentElement("afterend", summary);
+    renderSelectedSummary();
+  };
+
+  const ensureSelectionObserver = () => {
+    const listRoot = findCalendarListRoot();
+    if (!listRoot || listRoot === selectionObserverRoot) return;
+
+    if (selectionObserver) selectionObserver.disconnect();
+    selectionObserverRoot = listRoot;
+    selectionObserver = new MutationObserver((mutations) => {
+      const hasSelectionChange = mutations.some(
+        (mutation) =>
+          mutation.type === "attributes" && mutation.attributeName === "aria-selected"
+      );
+      if (hasSelectionChange) {
+        scheduleSelectionUpdate();
+      }
+    });
+
+    selectionObserver.observe(listRoot, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ["aria-selected"]
+    });
   };
 
   const getEditorPillLabels = (editor) => {
@@ -839,10 +1099,7 @@
 
   const startObserver = () => {
     const observer = new MutationObserver(() => {
-      ensureButton();
-      ensureSearchBox();
-      if (state.searchTerm) applyCalendarSearch(state.searchTerm);
-      maybeAutofillAttendees();
+      scheduleUpdate();
     });
 
     observer.observe(document.documentElement, {
@@ -854,6 +1111,8 @@
   const boot = () => {
     ensureButton();
     ensureSearchBox();
+    ensureSelectedSummary();
+    ensureSelectionObserver();
     maybeAutofillAttendees();
     startObserver();
   };

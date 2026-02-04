@@ -81,3 +81,90 @@
 .oce-calendar-search-miss {
   display: none !important;
 }
+
+#oce-calendar-selected-summary {
+  position: sticky;
+  top: 38px;
+  padding: 8px;
+  background: #fff;
+  border-bottom: 1px solid #e5e5e5;
+  z-index: 9998;
+}
+
+.oce-selected-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.oce-selected-title {
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+#oce-calendar-selected-count {
+  display: inline-flex;
+  min-width: 28px;
+  justify-content: center;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: #f3f2f1;
+  font-size: 11px;
+  color: #605e5c;
+}
+
+.oce-selected-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oce-selected-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.oce-selected-remove {
+  border: 1px solid #c8c6c4;
+  background: #fff;
+  color: #323130;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.oce-selected-remove:hover {
+  border-color: #a19f9d;
+  background: #f3f2f1;
+}
+
+.oce-selected-pill {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #f8f7f6;
+  border: 1px solid #e0dfde;
+  font-size: 12px;
+}
+
+.oce-selected-email {
+  font-size: 11px;
+  color: #605e5c;
+  word-break: break-all;
+}
+
+.oce-selected-empty {
+  font-size: 11px;
+  color: #8a8886;
+  padding: 4px 0;
+}
