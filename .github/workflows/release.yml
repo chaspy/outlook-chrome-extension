@@ -39,7 +39,7 @@ jobs:
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
           echo "last_tag=${last_tag}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate release notes and changelog
+      - name: Generate release notes
         run: |
           tag="${{ steps.meta.outputs.tag }}"
           last_tag="${{ steps.meta.outputs.last_tag }}"
@@ -56,8 +56,6 @@ jobs:
             echo
             cat .release-notes.tmp
           } > RELEASE_NOTES.md
-
-          cp RELEASE_NOTES.md CHANGELOG.md
 
       - name: Package extension
         run: |
@@ -79,4 +77,3 @@ jobs:
           body_path: RELEASE_NOTES.md
           files: |
             dist/outlook-chrome-extension-${{ steps.meta.outputs.tag }}.zip
-            CHANGELOG.md
