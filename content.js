@@ -47,6 +47,7 @@
     searchMatches: 0,
     contactsByName: new Map(),
     contactsByEmail: new Map(),
+    contactsByNameIds: new Map(),
     contactsCount: 0,
     contactsLoaded: false,
     showAllClicked: false,
@@ -108,6 +109,11 @@
   const normalizeNameKey = (value) =>
     stripInvisible(value).replaceAll(/\s+/g, "").trim().toLowerCase();
   const normalizeEmail = (value) => value.trim().toLowerCase();
+  const normalizeId = (value) =>
+    normalizeText(value)
+      .replaceAll(/\s+/g, "")
+      .replace(/^@+/, "")
+      .toLowerCase();
   const isEmailInput = (value) => value.includes("@");
   const normalizeSearchTerm = (value) => {
     const cleaned = normalizeText(value || "").toLowerCase();
@@ -128,6 +134,7 @@
   const updateContactsFromList = (list) => {
     const byName = new Map();
     const byEmail = new Map();
+    const byNameIds = new Map();
     let count = 0;
     if (Array.isArray(list)) {
       list.forEach((entry) => {
@@ -135,16 +142,22 @@
         const name = normalizeText(entry.name || "");
         const nameKey = normalizeNameKey(name);
         const email = normalizeEmail(entry.email || "");
+        const id = normalizeId(entry.id || "");
         if (!nameKey || !email) return;
         if (!byName.has(nameKey)) byName.set(nameKey, new Set());
         byName.get(nameKey).add(email);
         if (!byEmail.has(email)) byEmail.set(email, new Set());
         byEmail.get(email).add(nameKey);
+        if (id) {
+          if (!byNameIds.has(nameKey)) byNameIds.set(nameKey, new Set());
+          byNameIds.get(nameKey).add(id);
+        }
         count += 1;
       });
     }
     state.contactsByName = byName;
     state.contactsByEmail = byEmail;
+    state.contactsByNameIds = byNameIds;
     state.contactsCount = count;
     state.contactsLoaded = true;
   };
@@ -176,6 +189,7 @@
 
   const getEmailsForName = (nameKey) => state.contactsByName.get(nameKey);
   const getNamesForEmail = (emailKey) => state.contactsByEmail.get(emailKey);
+  const getIdsForName = (nameKey) => state.contactsByNameIds.get(nameKey);
 
   const getUniqueEmailForName = (nameKey) => {
     const emails = getEmailsForName(nameKey);
@@ -322,10 +336,18 @@
     const termKey = normalizeNameKey(normalizedTerm);
     if (termKey && nameKey.includes(termKey)) return true;
     const emails = getEmailsForName(nameKey);
-    if (!emails) return false;
-    const emailTerm = normalizeEmail(normalizedTerm);
-    for (const email of emails) {
-      if (normalizeEmail(email).includes(emailTerm)) return true;
+    if (emails) {
+      const emailTerm = normalizeEmail(normalizedTerm);
+      for (const email of emails) {
+        if (normalizeEmail(email).includes(emailTerm)) return true;
+      }
+    }
+    const ids = getIdsForName(nameKey);
+    if (!ids) return false;
+    const idTerm = normalizeId(normalizedTerm);
+    if (!idTerm) return false;
+    for (const id of ids) {
+      if (normalizeId(id).includes(idTerm)) return true;
     }
     return false;
   };
@@ -1209,7 +1231,12 @@
     const contactSamples = [];
     for (const [name, emails] of state.contactsByName.entries()) {
       if (contactSamples.length >= 10) break;
-      contactSamples.push({ nameKey: name, emails: [...emails] });
+      const ids = state.contactsByNameIds.get(name);
+      contactSamples.push({
+        nameKey: name,
+        emails: [...emails],
+        ids: ids ? [...ids] : []
+      });
     }
 
     const iframes = [...document.querySelectorAll("iframe")].map((frame) => {
@@ -1240,6 +1267,7 @@
       contactsCount: state.contactsCount,
       contactsByNameCount: state.contactsByName.size,
       contactsByEmailCount: state.contactsByEmail.size,
+      contactsByNameIdsCount: state.contactsByNameIds.size,
       contactsLoaded: state.contactsLoaded,
       contactsSamples: contactSamples,
       ignoredErrors: state.ignoredErrors,
