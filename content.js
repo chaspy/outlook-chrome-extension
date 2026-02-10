@@ -119,10 +119,13 @@
       .toLowerCase();
   const isEmailInput = (value) => value.includes("@");
   const tokenizeSearchTerm = (value) => {
-    const cleaned = normalizeText(value || "").toLowerCase();
-    if (!cleaned) return [];
-    const stripped = cleaned.replaceAll(/[<>"',;]+/g, " ");
-    return stripped
+    const raw = stripInvisible(value || "");
+    if (!raw) return [];
+    const cleaned = raw
+      .replaceAll("\u3000", " ")
+      .replaceAll(/[<>"',;]+/g, " ")
+      .toLowerCase();
+    return cleaned
       .split(/\s+/)
       .map((token) => token.trim())
       .filter((token) => token.length > 0 && token !== "@");
