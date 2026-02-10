@@ -118,27 +118,70 @@
       .replace(/^@+/, "")
       .toLowerCase();
   const isEmailInput = (value) => value.includes("@");
-  const tokenizeSearchTerm = (value) =>
-    normalizeText(value || "")
-      .toLowerCase()
+  const tokenizeSearchTerm = (value) => {
+    const cleaned = normalizeText(value || "").toLowerCase();
+    if (!cleaned) return [];
+    const stripped = cleaned.replaceAll(/[<>"',;]+/g, " ");
+    return stripped
       .split(/\s+/)
       .map((token) => token.trim())
-      .filter(Boolean);
+      .filter((token) => token.length > 0 && token !== "@");
+  };
+
+  const isEditDistanceOneOrLess = (left, right) => {
+    if (left === right) return true;
+    const lengthDiff = Math.abs(left.length - right.length);
+    if (lengthDiff > 1) return false;
+
+    if (left.length === right.length) {
+      let mismatches = 0;
+      let firstMismatch = -1;
+      for (let i = 0; i < left.length; i += 1) {
+        if (left[i] !== right[i]) {
+          mismatches += 1;
+          if (firstMismatch < 0) firstMismatch = i;
+          if (mismatches > 2) return false;
+        }
+      }
+      if (mismatches <= 1) return true;
+      if (mismatches === 2 && firstMismatch >= 0 && firstMismatch + 1 < left.length) {
+        return (
+          left[firstMismatch] === right[firstMismatch + 1] &&
+          left[firstMismatch + 1] === right[firstMismatch]
+        );
+      }
+      return false;
+    }
+
+    const [shorter, longer] = left.length < right.length ? [left, right] : [right, left];
+    let i = 0;
+    let j = 0;
+    let skips = 0;
+    while (i < shorter.length && j < longer.length) {
+      if (shorter[i] === longer[j]) {
+        i += 1;
+        j += 1;
+        continue;
+      }
+      skips += 1;
+      if (skips > 1) return false;
+      j += 1;
+    }
+    return true;
+  };
 
   const isLooseMatch = (haystack, needle) => {
     if (!haystack || !needle) return false;
     if (haystack.includes(needle)) return true;
     if (needle.length < 4) return false;
-    if (haystack.length < needle.length) return false;
-    for (let i = 0; i <= haystack.length - needle.length; i += 1) {
-      let mismatches = 0;
-      for (let j = 0; j < needle.length; j += 1) {
-        if (haystack[i + j] !== needle[j]) {
-          mismatches += 1;
-          if (mismatches > 1) break;
-        }
+    const minLength = Math.max(1, needle.length - 1);
+    const maxLength = needle.length + 1;
+    for (let length = minLength; length <= maxLength; length += 1) {
+      if (haystack.length < length) continue;
+      for (let i = 0; i <= haystack.length - length; i += 1) {
+        const slice = haystack.slice(i, i + length);
+        if (isEditDistanceOneOrLess(slice, needle)) return true;
       }
-      if (mismatches <= 1) return true;
     }
     return false;
   };
@@ -940,6 +983,28 @@
         name.textContent = entry.name;
         info.appendChild(name);
 
+        const emails = getEmailsForName(entry.nameKey);
+        if (emails && emails.size > 0) {
+          const email = document.createElement("div");
+          email.className = "oce-search-hints-email";
+          const list = [...emails];
+          const preview = list.slice(0, 2).join(", ");
+          email.textContent =
+            list.length > 2 ? `${preview} 他${list.length - 2}件` : preview;
+          info.appendChild(email);
+        }
+
+        const ids = getIdsForName(entry.nameKey);
+        if (ids && ids.size > 0) {
+          const id = document.createElement("div");
+          id.className = "oce-search-hints-id";
+          const list = [...ids];
+          const preview = list.slice(0, 2).map((value) => `@${value}`).join(", ");
+          id.textContent =
+            list.length > 2 ? `${preview} 他${list.length - 2}件` : preview;
+          info.appendChild(id);
+        }
+
         row.appendChild(info);
 
         const action = document.createElement("button");
@@ -1003,7 +1068,7 @@
         const action = document.createElement("button");
         action.type = "button";
         action.className = "oce-search-hints-action";
-        action.textContent = "Outlookに登録する";
+        action.textContent = "登録";
         action.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
