@@ -87,6 +87,68 @@
   background: #fff;
 }
 
+.oce-search-hints {
+  margin-top: 6px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #e0dfde;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.oce-search-hints-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #605e5c;
+  margin-bottom: 4px;
+}
+
+.oce-search-hints-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oce-search-hints-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.oce-search-hints-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.oce-search-hints-name {
+  font-weight: 600;
+}
+
+.oce-search-hints-email,
+.oce-search-hints-id {
+  font-size: 11px;
+  color: #605e5c;
+  word-break: break-all;
+}
+
+.oce-search-hints-action {
+  border: 1px solid #c8c6c4;
+  background: #fff;
+  color: #323130;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.oce-search-hints-action:hover {
+  border-color: #a19f9d;
+  background: #f3f2f1;
+}
+
 .oce-calendar-search-hit {
   outline: 2px dashed #0078d4;
   outline-offset: 2px;

@@ -9,6 +9,7 @@
   const SELECTED_LIST_ID = "oce-calendar-selected-list";
   const SEARCH_HIT_CLASS = "oce-calendar-search-hit";
   const SEARCH_MISS_CLASS = "oce-calendar-search-miss";
+  const SEARCH_HINTS_ID = "oce-calendar-search-hints";
   const CALENDAR_ROOT_SELECTOR = ".templateColumnContent, [data-calitemid]";
   const USE_OUTLOOK_CONFLICT_FLAG = false;
   const IGNORE_LABEL_PATTERNS = [
@@ -48,6 +49,7 @@
     contactsByName: new Map(),
     contactsByEmail: new Map(),
     contactsByNameIds: new Map(),
+    contactsList: [],
     contactsCount: 0,
     contactsLoaded: false,
     showAllClicked: false,
@@ -135,6 +137,7 @@
     const byName = new Map();
     const byEmail = new Map();
     const byNameIds = new Map();
+    const uniqueList = new Map();
     let count = 0;
     if (Array.isArray(list)) {
       list.forEach((entry) => {
@@ -144,6 +147,15 @@
         const email = normalizeEmail(entry.email || "");
         const id = normalizeId(entry.id || "");
         if (!nameKey || !email) return;
+        const uniqueKey = `${nameKey}\n${email}\n${id}`;
+        if (!uniqueList.has(uniqueKey)) {
+          uniqueList.set(uniqueKey, {
+            name,
+            nameKey,
+            email,
+            id
+          });
+        }
         if (!byName.has(nameKey)) byName.set(nameKey, new Set());
         byName.get(nameKey).add(email);
         if (!byEmail.has(email)) byEmail.set(email, new Set());
@@ -158,6 +170,7 @@
     state.contactsByName = byName;
     state.contactsByEmail = byEmail;
     state.contactsByNameIds = byNameIds;
+    state.contactsList = [...uniqueList.values()];
     state.contactsCount = count;
     state.contactsLoaded = true;
   };
@@ -190,6 +203,7 @@
   const getEmailsForName = (nameKey) => state.contactsByName.get(nameKey);
   const getNamesForEmail = (emailKey) => state.contactsByEmail.get(emailKey);
   const getIdsForName = (nameKey) => state.contactsByNameIds.get(nameKey);
+  const getContactsList = () => state.contactsList || [];
 
   const getUniqueEmailForName = (nameKey) => {
     const emails = getEmailsForName(nameKey);
@@ -350,6 +364,69 @@
       if (normalizeId(id).includes(idTerm)) return true;
     }
     return false;
+  };
+
+  const findContactMatches = (term) => {
+    const normalizedTerm = normalizeSearchTerm(term);
+    if (!normalizedTerm) return { matches: [], hasMore: false };
+    const termKey = normalizeNameKey(normalizedTerm);
+    const emailTerm = normalizeEmail(normalizedTerm);
+    const idTerm = normalizeId(normalizedTerm);
+    const matches = [];
+    let hasMore = false;
+    for (const entry of getContactsList()) {
+      const nameMatch = termKey && entry.nameKey.includes(termKey);
+      const emailMatch = emailTerm && entry.email.includes(emailTerm);
+      const idMatch = idTerm && entry.id && normalizeId(entry.id).includes(idTerm);
+      if (!nameMatch && !emailMatch && !idMatch) continue;
+      matches.push(entry);
+      if (matches.length > 3) {
+        hasMore = true;
+        break;
+      }
+    }
+    return { matches, hasMore };
+  };
+
+  const setNativeInputValue = (input, value) => {
+    const prototype = Object.getPrototypeOf(input);
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+    const setter = descriptor?.set;
+    if (setter) {
+      setter.call(input, value);
+    } else {
+      input.value = value;
+    }
+  };
+
+  const findOutlookSearchInput = () => {
+    const docs = getAccessibleDocuments();
+    for (const doc of docs) {
+      const input = doc.getElementById("topSearchInput");
+      if (input) return input;
+      const box = doc.getElementById("searchBoxId-Calendar");
+      if (box) {
+        const candidate = box.querySelector(
+          "input[aria-label=\"Search\"], input[type=\"search\"], input"
+        );
+        if (candidate) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const registerContactInOutlook = (entry) => {
+    const input = findOutlookSearchInput();
+    if (!input) {
+      showToast("Outlookの検索欄が見つかりません");
+      return;
+    }
+    const value = entry.email || entry.name;
+    setNativeInputValue(input, value);
+    input.focus();
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    showToast("Outlookの検索欄に入力しました");
   };
 
   const SHOW_ALL_LABELS = ["Show all", "すべて表示"];
@@ -649,6 +726,7 @@
     state.searchTerm = term;
     state.lastSearchAppliedAt = Date.now();
     renderSelectedSummary();
+    renderSearchHints(raw);
   };
 
   const ensureSearchBox = () => {
@@ -678,6 +756,13 @@
     });
 
     container.appendChild(input);
+
+    const hints = document.createElement("div");
+    hints.id = SEARCH_HINTS_ID;
+    hints.className = "oce-search-hints";
+    hints.hidden = true;
+    container.appendChild(hints);
+
     listRoot.parentElement?.insertBefore(container, listRoot);
     if (state.searchTerm) applyCalendarSearch(state.searchTerm);
   };
@@ -715,6 +800,73 @@
 
     searchBox.after(summary);
     renderSelectedSummary();
+  };
+
+  const renderSearchHints = (rawTerm) => {
+    const hints = document.getElementById(SEARCH_HINTS_ID);
+    if (!hints) return;
+    hints.textContent = "";
+    hints.hidden = true;
+
+    if (!state.contactsLoaded) return;
+    if (state.searchMatches > 0) return;
+    const term = normalizeSearchTerm(rawTerm);
+    if (!term) return;
+
+    const { matches, hasMore } = findContactMatches(term);
+    if (hasMore || matches.length === 0) return;
+
+    hints.hidden = false;
+
+    const title = document.createElement("div");
+    title.className = "oce-search-hints-title";
+    title.textContent = "Outlook未登録候補";
+    hints.appendChild(title);
+
+    const list = document.createElement("div");
+    list.className = "oce-search-hints-list";
+
+    matches.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "oce-search-hints-row";
+
+      const info = document.createElement("div");
+      info.className = "oce-search-hints-info";
+
+      const name = document.createElement("div");
+      name.className = "oce-search-hints-name";
+      name.textContent = entry.name;
+      info.appendChild(name);
+
+      const email = document.createElement("div");
+      email.className = "oce-search-hints-email";
+      email.textContent = entry.email;
+      info.appendChild(email);
+
+      if (entry.id) {
+        const id = document.createElement("div");
+        id.className = "oce-search-hints-id";
+        id.textContent = `@${entry.id}`;
+        info.appendChild(id);
+      }
+
+      row.appendChild(info);
+
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "oce-search-hints-action";
+      action.textContent = "Outlookに登録する";
+      action.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        registerContactInOutlook(entry);
+      });
+      row.appendChild(action);
+
+      list.appendChild(row);
+    });
+
+    hints.appendChild(list);
   };
 
   const ensureSelectionObserver = () => {
