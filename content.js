@@ -10,6 +10,7 @@
   const SEARCH_HIT_CLASS = "oce-calendar-search-hit";
   const SEARCH_MISS_CLASS = "oce-calendar-search-miss";
   const SEARCH_HINTS_ID = "oce-calendar-search-hints";
+  const SEARCH_HINTS_LIMIT = 10;
   const CALENDAR_ROOT_SELECTOR = ".templateColumnContent, [data-calitemid]";
   const USE_OUTLOOK_CONFLICT_FLAG = false;
   const IGNORE_LABEL_PATTERNS = [
@@ -366,26 +367,55 @@
     return false;
   };
 
-  const findContactMatches = (term) => {
+  const findCalendarMatches = (term) => {
     const normalizedTerm = normalizeSearchTerm(term);
-    if (!normalizedTerm) return { matches: [], hasMore: false };
+    const matches = [];
+    const matchedNameKeys = new Set();
+    let total = 0;
+    if (!normalizedTerm) {
+      return { matches, matchedNameKeys, total };
+    }
+    const buttons = getCalendarOptionButtons();
+    const seen = new Set();
+    for (const button of buttons) {
+      const label = button.querySelector(".ATH58");
+      const raw = label ? label.textContent : button.textContent;
+      const name = normalizeText(raw || "");
+      if (!name) continue;
+      const nameKey = normalizeNameKey(name);
+      if (seen.has(nameKey)) continue;
+      seen.add(nameKey);
+      if (!matchesCalendarSearch(name, term)) continue;
+      matchedNameKeys.add(nameKey);
+      total += 1;
+      if (matches.length < SEARCH_HINTS_LIMIT) {
+        matches.push({ name, nameKey });
+      }
+    }
+    return { matches, matchedNameKeys, total };
+  };
+
+  const findContactMatches = (term, excludedNameKeys) => {
+    const normalizedTerm = normalizeSearchTerm(term);
+    if (!normalizedTerm) return { matches: [], total: 0 };
     const termKey = normalizeNameKey(normalizedTerm);
     const emailTerm = normalizeEmail(normalizedTerm);
     const idTerm = normalizeId(normalizedTerm);
     const matches = [];
-    let hasMore = false;
+    let total = 0;
+    const excluded = excludedNameKeys || new Set();
     for (const entry of getContactsList()) {
+      if (excluded.has(entry.nameKey)) continue;
       const nameMatch = termKey && entry.nameKey.includes(termKey);
       const emailMatch = emailTerm && entry.email.includes(emailTerm);
       const idMatch = idTerm && entry.id && normalizeId(entry.id).includes(idTerm);
       if (!nameMatch && !emailMatch && !idMatch) continue;
-      matches.push(entry);
-      if (matches.length > 3) {
-        hasMore = true;
-        break;
+      total += 1;
+      if (matches.length < SEARCH_HINTS_LIMIT) {
+        matches.push(entry);
       }
     }
-    return { matches, hasMore };
+    return { matches, total };
   };
 
   const setNativeInputValue = (input, value) => {
@@ -740,7 +770,7 @@
     const input = document.createElement("input");
     input.id = SEARCH_INPUT_ID;
     input.type = "search";
-    input.placeholder = "検索（名前/メール）";
+    input.placeholder = "検索（名前/メール/ID）";
     input.autocomplete = "off";
     input.spellcheck = false;
     input.value = state.searchTerm;
@@ -809,64 +839,117 @@
     hints.hidden = true;
 
     if (!state.contactsLoaded) return;
-    if (state.searchMatches > 0) return;
     const term = normalizeSearchTerm(rawTerm);
     if (!term) return;
 
-    const { matches, hasMore } = findContactMatches(term);
-    if (hasMore || matches.length === 0) return;
+    const calendarMatches = findCalendarMatches(term);
+    const contactMatches = findContactMatches(term, calendarMatches.matchedNameKeys);
+    if (calendarMatches.total === 0 && contactMatches.total === 0) return;
 
     hints.hidden = false;
 
-    const title = document.createElement("div");
-    title.className = "oce-search-hints-title";
-    title.textContent = "Outlook未登録候補";
-    hints.appendChild(title);
+    const renderSection = (titleText, total, items, renderItem) => {
+      const section = document.createElement("div");
+      section.className = "oce-search-section";
 
-    const list = document.createElement("div");
-    list.className = "oce-search-hints-list";
+      const title = document.createElement("div");
+      title.className = "oce-search-hints-title";
+      title.textContent = titleText;
 
-    matches.forEach((entry) => {
-      const row = document.createElement("div");
-      row.className = "oce-search-hints-row";
+      const count = document.createElement("span");
+      count.className = "oce-search-hints-count";
+      count.textContent = `${total}`;
+      title.appendChild(count);
 
-      const info = document.createElement("div");
-      info.className = "oce-search-hints-info";
+      section.appendChild(title);
 
-      const name = document.createElement("div");
-      name.className = "oce-search-hints-name";
-      name.textContent = entry.name;
-      info.appendChild(name);
-
-      const email = document.createElement("div");
-      email.className = "oce-search-hints-email";
-      email.textContent = entry.email;
-      info.appendChild(email);
-
-      if (entry.id) {
-        const id = document.createElement("div");
-        id.className = "oce-search-hints-id";
-        id.textContent = `@${entry.id}`;
-        info.appendChild(id);
+      if (items.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "oce-search-hints-empty";
+        empty.textContent = "該当なし";
+        section.appendChild(empty);
+      } else {
+        const list = document.createElement("div");
+        list.className = "oce-search-hints-list";
+        items.forEach((item) => list.appendChild(renderItem(item)));
+        section.appendChild(list);
       }
 
-      row.appendChild(info);
+      if (total > items.length) {
+        const more = document.createElement("div");
+        more.className = "oce-search-hints-more";
+        more.textContent = `他${total - items.length}件`;
+        section.appendChild(more);
+      }
 
-      const action = document.createElement("button");
-      action.type = "button";
-      action.className = "oce-search-hints-action";
-      action.textContent = "Outlookに登録する";
-      action.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        registerContactInOutlook(entry);
-      });
-      row.appendChild(action);
+      hints.appendChild(section);
+    };
 
-      list.appendChild(row);
-    });
+    renderSection(
+      "予定表リストの一致",
+      calendarMatches.total,
+      calendarMatches.matches,
+      (entry) => {
+        const row = document.createElement("div");
+        row.className = "oce-search-hints-row";
 
-    hints.appendChild(list);
+        const info = document.createElement("div");
+        info.className = "oce-search-hints-info";
+
+        const name = document.createElement("div");
+        name.className = "oce-search-hints-name";
+        name.textContent = entry.name;
+        info.appendChild(name);
+
+        row.appendChild(info);
+        return row;
+      }
+    );
+
+    renderSection(
+      "登録済みのみの一致",
+      contactMatches.total,
+      contactMatches.matches,
+      (entry) => {
+        const row = document.createElement("div");
+        row.className = "oce-search-hints-row";
+
+        const info = document.createElement("div");
+        info.className = "oce-search-hints-info";
+
+        const name = document.createElement("div");
+        name.className = "oce-search-hints-name";
+        name.textContent = entry.name;
+        info.appendChild(name);
+
+        const email = document.createElement("div");
+        email.className = "oce-search-hints-email";
+        email.textContent = entry.email;
+        info.appendChild(email);
+
+        if (entry.id) {
+          const id = document.createElement("div");
+          id.className = "oce-search-hints-id";
+          id.textContent = `@${entry.id}`;
+          info.appendChild(id);
+        }
+
+        row.appendChild(info);
+
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "oce-search-hints-action";
+        action.textContent = "Outlookに登録する";
+        action.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          registerContactInOutlook(entry);
+        });
+        row.appendChild(action);
+
+        return row;
+      }
+    );
   };
 
   const ensureSelectionObserver = () => {
