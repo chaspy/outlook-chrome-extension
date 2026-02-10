@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const test = require("node:test");
 const {
   tokenizeSearchTerm,
   matchesTokens,
@@ -22,15 +23,17 @@ const matches = (input) =>
     ids
   });
 
-assert.deepEqual(tokenizeSearchTerm("ojiry"), ["ojiry"]);
-assert.deepEqual(tokenizeSearchTerm("ojiry yoshi"), ["ojiry", "yoshi"]);
-assert.deepEqual(tokenizeSearchTerm("  ojiry   yoshi  "), ["ojiry", "yoshi"]);
-assert.deepEqual(tokenizeSearchTerm("ojiry\u3000yoshi"), ["ojiry", "yoshi"]);
+test("tokenizeSearchTerm splits tokens", () => {
+  assert.deepEqual(tokenizeSearchTerm("ojiry"), ["ojiry"]);
+  assert.deepEqual(tokenizeSearchTerm("ojiry yoshi"), ["ojiry", "yoshi"]);
+  assert.deepEqual(tokenizeSearchTerm("  ojiry   yoshi  "), ["ojiry", "yoshi"]);
+  assert.deepEqual(tokenizeSearchTerm("ojiry\u3000yoshi"), ["ojiry", "yoshi"]);
+});
 
-assert.equal(matches("ojiry"), true);
-assert.equal(matches("ojiry yoshi"), true);
-assert.equal(matches("ojiry yishi"), true);
-assert.equal(matches("ojiry nope"), false);
-assert.equal(matches("ojir"), true);
-
-console.log("search-filter.test.js: OK");
+test("matchesTokens matches id and email", () => {
+  assert.equal(matches("ojiry"), true);
+  assert.equal(matches("ojiry yoshi"), true);
+  assert.equal(matches("ojiry yishi"), true);
+  assert.equal(matches("ojiry nope"), false);
+  assert.equal(matches("ojir"), true);
+});
