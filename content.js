@@ -551,6 +551,28 @@
     });
   };
 
+  const isCalendarSelected = (nameKey) =>
+    findCalendarButtonsForName(nameKey).some(
+      (button) => button.getAttribute("aria-selected") === "true"
+    );
+
+  const selectCalendar = (nameKey) => {
+    const buttons = findCalendarButtonsForName(nameKey);
+    const target = buttons.find(
+      (button) => button.getAttribute("aria-selected") !== "true"
+    );
+    if (target) {
+      target.click();
+      showToast("選択しました");
+      return true;
+    }
+    if (buttons.length > 0) {
+      showToast("選択済みです");
+      return true;
+    }
+    return false;
+  };
+
   const deselectCalendar = (nameKey) => {
     const buttons = findCalendarButtonsForName(nameKey);
     const target = buttons.find(
@@ -902,6 +924,25 @@
         info.appendChild(name);
 
         row.appendChild(info);
+
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "oce-search-hints-action";
+        if (isCalendarSelected(entry.nameKey)) {
+          action.textContent = "選択済み";
+          action.disabled = true;
+        } else {
+          action.textContent = "選択";
+          action.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!selectCalendar(entry.nameKey)) {
+              showToast("選択できませんでした");
+            }
+          });
+        }
+        row.appendChild(action);
+
         return row;
       }
     );

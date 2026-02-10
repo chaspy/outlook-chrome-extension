@@ -183,6 +183,13 @@
   background: #f3f2f1;
 }
 
+.oce-search-hints-action:disabled {
+  cursor: default;
+  opacity: 0.6;
+  border-color: #e1dfdd;
+  background: #f8f7f6;
+}
+
 .oce-calendar-search-hit {
   outline: 2px dashed #0078d4;
   outline-offset: 2px;
