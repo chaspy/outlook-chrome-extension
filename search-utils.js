@@ -1,3 +1,4 @@
+/* eslint-env browser, node */
 (() => {
   const stripInvisible = (value) =>
     value
