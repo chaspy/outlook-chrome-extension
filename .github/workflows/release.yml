@@ -26,15 +26,7 @@ jobs:
         id: meta
         run: |
           last_tag=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
-          if [ -z "$last_tag" ]; then
-            base_version=$(node -p "require('./manifest.json').version || '0.0.1'")
-            version="$base_version"
-          else
-            ver="${last_tag#v}"
-            IFS='.' read -r major minor patch <<< "$ver"
-            patch=$((patch + 1))
-            version="${major}.${minor}.${patch}"
-          fi
+          version=$(node -p "require('./manifest.json').version || '0.0.1'")
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
           echo "last_tag=${last_tag}" >> "$GITHUB_OUTPUT"
@@ -60,7 +52,7 @@ jobs:
       - name: Package extension
         run: |
           mkdir -p dist
-          files=(manifest.json content.js content.css popup.html popup.js popup.css)
+          files=(manifest.json search-utils.js content.js content.css popup.html popup.js popup.css)
           if [ -d icons ]; then
             files+=(icons)
           fi
