@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "lint": "eslint --rulesdir .eslint-rules \"**/*.js\""
+    "lint": "eslint --rulesdir .eslint-rules \"**/*.js\"",
+    "test:search": "node tests/search-filter.test.js"
   },
   "devDependencies": {
     "eslint": "^8.57.0",

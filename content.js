@@ -106,6 +106,12 @@
       .replaceAll("\u200C", "")
       .replaceAll("\u200D", "")
       .replaceAll("\uFEFF", "");
+  const stripZeroWidth = (value) =>
+    value
+      .replaceAll("\u200B", "")
+      .replaceAll("\u200C", "")
+      .replaceAll("\u200D", "")
+      .replaceAll("\uFEFF", "");
   const isEffectivelyEmpty = (value) => stripInvisible(value).length === 0;
   const normalizeText = (value) =>
     stripInvisible(value).replaceAll(/\s+/g, " ").trim();
@@ -119,7 +125,7 @@
       .toLowerCase();
   const isEmailInput = (value) => value.includes("@");
   const tokenizeSearchTerm = (value) => {
-    const raw = stripInvisible(value || "");
+    const raw = stripZeroWidth(value || "");
     if (!raw) return [];
     const cleaned = raw
       .replaceAll("\u3000", " ")
