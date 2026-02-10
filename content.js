@@ -118,14 +118,29 @@
       .replace(/^@+/, "")
       .toLowerCase();
   const isEmailInput = (value) => value.includes("@");
-  const normalizeSearchTerm = (value) => {
-    const cleaned = normalizeText(value || "").toLowerCase();
-    if (!cleaned) return "";
-    const match = cleaned.match(EMAIL_PATTERN);
-    if (match) return match[0].toLowerCase();
-    const stripped = cleaned.replaceAll(/[<>"',;]+/g, "");
-    if (stripped.includes("@")) return stripped.replaceAll(/\s+/g, "");
-    return cleaned;
+  const tokenizeSearchTerm = (value) =>
+    normalizeText(value || "")
+      .toLowerCase()
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter(Boolean);
+
+  const isLooseMatch = (haystack, needle) => {
+    if (!haystack || !needle) return false;
+    if (haystack.includes(needle)) return true;
+    if (needle.length < 4) return false;
+    if (haystack.length < needle.length) return false;
+    for (let i = 0; i <= haystack.length - needle.length; i += 1) {
+      let mismatches = 0;
+      for (let j = 0; j < needle.length; j += 1) {
+        if (haystack[i + j] !== needle[j]) {
+          mismatches += 1;
+          if (mismatches > 1) break;
+        }
+      }
+      if (mismatches <= 1) return true;
+    }
+    return false;
   };
 
   const captureIgnoredError = (error, context) => {
@@ -344,35 +359,38 @@
     return [...rows];
   };
 
-  const matchesCalendarSearch = (name, term) => {
-    const normalizedTerm = normalizeSearchTerm(term);
-    if (!normalizedTerm) return true;
-    const nameKey = normalizeNameKey(name);
-    const termKey = normalizeNameKey(normalizedTerm);
-    if (termKey && nameKey.includes(termKey)) return true;
-    const emails = getEmailsForName(nameKey);
+  const matchesToken = (token, nameKey, emails, ids) => {
+    const termKey = normalizeNameKey(token);
+    if (termKey && isLooseMatch(nameKey, termKey)) return true;
+    const emailTerm = normalizeEmail(token);
     if (emails) {
-      const emailTerm = normalizeEmail(normalizedTerm);
       for (const email of emails) {
-        if (normalizeEmail(email).includes(emailTerm)) return true;
+        if (isLooseMatch(normalizeEmail(email), emailTerm)) return true;
       }
     }
-    const ids = getIdsForName(nameKey);
-    if (!ids) return false;
-    const idTerm = normalizeId(normalizedTerm);
-    if (!idTerm) return false;
-    for (const id of ids) {
-      if (normalizeId(id).includes(idTerm)) return true;
+    const idTerm = normalizeId(token);
+    if (ids) {
+      for (const id of ids) {
+        if (isLooseMatch(normalizeId(id), idTerm)) return true;
+      }
     }
     return false;
   };
 
+  const matchesCalendarSearch = (name, tokens) => {
+    if (!tokens || tokens.length === 0) return true;
+    const nameKey = normalizeNameKey(name);
+    const emails = getEmailsForName(nameKey);
+    const ids = getIdsForName(nameKey);
+    return tokens.every((token) => matchesToken(token, nameKey, emails, ids));
+  };
+
   const findCalendarMatches = (term) => {
-    const normalizedTerm = normalizeSearchTerm(term);
+    const tokens = tokenizeSearchTerm(term);
     const matches = [];
     const matchedNameKeys = new Set();
     let total = 0;
-    if (!normalizedTerm) {
+    if (tokens.length === 0) {
       return { matches, matchedNameKeys, total };
     }
     const buttons = getCalendarOptionButtons();
@@ -385,7 +403,7 @@
       const nameKey = normalizeNameKey(name);
       if (seen.has(nameKey)) continue;
       seen.add(nameKey);
-      if (!matchesCalendarSearch(name, term)) continue;
+      if (!matchesCalendarSearch(name, tokens)) continue;
       matchedNameKeys.add(nameKey);
       total += 1;
       if (matches.length < SEARCH_HINTS_LIMIT) {
@@ -396,20 +414,18 @@
   };
 
   const findContactMatches = (term, excludedNameKeys) => {
-    const normalizedTerm = normalizeSearchTerm(term);
-    if (!normalizedTerm) return { matches: [], total: 0 };
-    const termKey = normalizeNameKey(normalizedTerm);
-    const emailTerm = normalizeEmail(normalizedTerm);
-    const idTerm = normalizeId(normalizedTerm);
+    const tokens = tokenizeSearchTerm(term);
+    if (tokens.length === 0) return { matches: [], total: 0 };
     const matches = [];
     let total = 0;
     const excluded = excludedNameKeys || new Set();
     for (const entry of getContactsList()) {
       if (excluded.has(entry.nameKey)) continue;
-      const nameMatch = termKey && entry.nameKey.includes(termKey);
-      const emailMatch = emailTerm && entry.email.includes(emailTerm);
-      const idMatch = idTerm && entry.id && normalizeId(entry.id).includes(idTerm);
-      if (!nameMatch && !emailMatch && !idMatch) continue;
+      const emails = entry.email ? [entry.email] : [];
+      const ids = entry.id ? [entry.id] : [];
+      if (!tokens.every((token) => matchesToken(token, entry.nameKey, emails, ids))) {
+        continue;
+      }
       total += 1;
       if (matches.length < SEARCH_HINTS_LIMIT) {
         matches.push(entry);
@@ -711,9 +727,9 @@
     return normalizeText(raw || "");
   };
 
-  const applyRowMatch = (row, term, groupHasMatch, matchState) => {
+  const applyRowMatch = (row, tokens, groupHasMatch, matchState) => {
     const name = getCalendarRowName(row);
-    const match = matchesCalendarSearch(name, term);
+    const match = matchesCalendarSearch(name, tokens);
     setRowMatchState(row, match);
     matchState.candidates += 1;
     if (!match) return;
@@ -733,14 +749,14 @@
     }
   };
 
-  const applySearchToDoc = (doc, term) => {
+  const applySearchToDoc = (doc, term, tokens) => {
     const listRoot = findCalendarListRootInDoc(doc);
     if (!listRoot) return { candidates: 0, matches: 0, firstMatch: null };
     const listContainer = listRoot.ul;
     const groups = [...listContainer.querySelectorAll("li[aria-label]")];
     const rows = getCalendarRows(listContainer);
 
-    if (!term) {
+    if (!tokens || tokens.length === 0) {
       clearSearchClasses(groups, rows);
       return { candidates: 0, matches: 0, firstMatch: null };
     }
@@ -749,7 +765,7 @@
     const matchState = { candidates: 0, matches: 0, firstMatch: null };
 
     for (const row of rows) {
-      applyRowMatch(row, term, groupHasMatch, matchState);
+      applyRowMatch(row, tokens, groupHasMatch, matchState);
     }
 
     updateGroupMatchClasses(groups, groupHasMatch);
@@ -758,7 +774,8 @@
   };
 
   const applyCalendarSearch = (raw) => {
-    const term = normalizeSearchTerm(raw);
+    const rawTerm = raw || "";
+    const tokens = tokenizeSearchTerm(rawTerm);
     const docs = collectDocuments(document);
     state.searchCandidates = 0;
     state.searchMatches = 0;
@@ -766,19 +783,19 @@
     let firstMatch = null;
 
     for (const doc of docs) {
-      const result = applySearchToDoc(doc, term);
+      const result = applySearchToDoc(doc, rawTerm, tokens);
       state.searchCandidates += result.candidates;
       state.searchMatches += result.matches;
       if (!firstMatch && result.firstMatch) firstMatch = result.firstMatch;
     }
 
-    if (firstMatch && term !== state.searchTerm) {
+    if (firstMatch && rawTerm !== state.searchTerm) {
       firstMatch.scrollIntoView({ block: "center", inline: "nearest" });
     }
-    state.searchTerm = term;
+    state.searchTerm = rawTerm;
     state.lastSearchAppliedAt = Date.now();
     renderSelectedSummary();
-    renderSearchHints(raw);
+    renderSearchHints(rawTerm);
   };
 
   const ensureSearchBox = () => {
@@ -861,11 +878,11 @@
     hints.hidden = true;
 
     if (!state.contactsLoaded) return;
-    const term = normalizeSearchTerm(rawTerm);
-    if (!term) return;
+    const tokens = tokenizeSearchTerm(rawTerm);
+    if (tokens.length === 0) return;
 
-    const calendarMatches = findCalendarMatches(term);
-    const contactMatches = findContactMatches(term, calendarMatches.matchedNameKeys);
+    const calendarMatches = findCalendarMatches(rawTerm);
+    const contactMatches = findContactMatches(rawTerm, calendarMatches.matchedNameKeys);
     if (calendarMatches.total === 0 && contactMatches.total === 0) return;
 
     hints.hidden = false;
@@ -1471,9 +1488,8 @@
     const searchInput = document.getElementById(SEARCH_INPUT_ID);
     const searchInputValue = searchInput ? searchInput.value : "";
     const searchBoxPresent = !!document.getElementById(SEARCH_BOX_ID);
-    const effectiveSearchTerm = normalizeSearchTerm(
-      searchInputValue || state.searchTerm || ""
-    );
+    const effectiveSearchRaw = searchInputValue || state.searchTerm || "";
+    const effectiveSearchTokens = tokenizeSearchTerm(effectiveSearchRaw);
 
     const rowDiagnostics = [];
     let rowsTotal = 0;
@@ -1503,7 +1519,7 @@
           name,
           nameKey,
           emails,
-          match: matchesCalendarSearch(name, effectiveSearchTerm),
+          match: matchesCalendarSearch(name, effectiveSearchTokens),
           hasHitClass: row.classList.contains(SEARCH_HIT_CLASS),
           hasMissClass: row.classList.contains(SEARCH_MISS_CLASS)
         });
@@ -1556,8 +1572,8 @@
       lastIgnoredError: state.lastIgnoredError,
       searchTerm: state.searchTerm,
       searchInputValue,
+      searchTokens: effectiveSearchTokens,
       searchBoxPresent,
-      effectiveSearchTerm,
       searchCandidates: state.searchCandidates,
       searchMatches: state.searchMatches,
       searchHitClassCount: document.querySelectorAll(`.${SEARCH_HIT_CLASS}`).length,
