@@ -52,14 +52,42 @@ jobs:
       - name: Package extension
         run: |
           mkdir -p dist
-          files=(manifest.json search-utils.js content.js content.css popup.html popup.js popup.css)
-          if [ -d icons ]; then
-            files+=(icons)
-          fi
-          if [ -d assets ]; then
-            files+=(assets)
-          fi
-          zip -r "dist/outlook-chrome-extension-${{ steps.meta.outputs.tag }}.zip" "${files[@]}"
+          files=$(node - <<'NODE'
+          const fs = require("node:fs");
+          const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+          const files = new Set(["manifest.json"]);
+          const add = (value) => {
+            if (!value) return;
+            if (Array.isArray(value)) {
+              value.forEach(add);
+              return;
+            }
+            files.add(value);
+          };
+
+          if (manifest.action?.default_popup) add(manifest.action.default_popup);
+          if (manifest.background?.service_worker) add(manifest.background.service_worker);
+          if (manifest.background?.scripts) add(manifest.background.scripts);
+          if (manifest.content_scripts) {
+            manifest.content_scripts.forEach((entry) => {
+              add(entry.js);
+              add(entry.css);
+            });
+          }
+          if (manifest.devtools_page) add(manifest.devtools_page);
+          if (manifest.options_ui?.page) add(manifest.options_ui.page);
+          if (manifest.side_panel?.default_path) add(manifest.side_panel.default_path);
+          if (manifest.chrome_url_overrides) add(Object.values(manifest.chrome_url_overrides));
+          if (manifest.icons) add(Object.values(manifest.icons));
+          if (manifest.web_accessible_resources) {
+            manifest.web_accessible_resources.forEach((entry) => add(entry.resources));
+          }
+
+          const sorted = [...files].filter(Boolean).sort();
+          process.stdout.write(sorted.join(" "));
+          NODE
+          )
+          zip -r "dist/outlook-chrome-extension-${{ steps.meta.outputs.tag }}.zip" ${files}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
