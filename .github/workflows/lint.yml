@@ -15,3 +15,15 @@ jobs:
           cache: "npm"
       - run: npm ci
       - run: npm run lint
+      - name: Prepare manifest for web-ext lint
+        run: |
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const path = "manifest.json";
+          const manifest = JSON.parse(fs.readFileSync(path, "utf8"));
+          manifest.browser_specific_settings ??= {};
+          manifest.browser_specific_settings.gecko ??= {};
+          manifest.browser_specific_settings.gecko.id ??= "outlook-chrome-extension@chaspy.local";
+          fs.writeFileSync(path, JSON.stringify(manifest, null, 2));
+          NODE
+      - run: npm run lint:webext

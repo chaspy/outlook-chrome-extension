@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "lint": "eslint --rulesdir .eslint-rules \"**/*.js\"",
+    "lint:webext": "web-ext lint --source-dir . --ignore-files node_modules/** dist/** coverage/** tests/** .github/**",
     "test:search": "node --test tests/search-filter.test.js",
     "test:coverage": "c8 --reporter=lcov --reporter=text node --test tests/search-filter.test.js"
   },
@@ -11,6 +12,8 @@
     "c8": "^9.1.0",
     "eslint": "^8.57.0",
     "eslint-plugin-sonarjs": "^0.25.0",
-    "eslint-plugin-unicorn": "^50.0.0"
+    "eslint-plugin-unicorn": "^50.0.0",
+    "node-fetch": "2.6.11",
+    "web-ext": "^7.11.0"
   }
 }
