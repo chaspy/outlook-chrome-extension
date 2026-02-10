@@ -929,8 +929,14 @@
         action.type = "button";
         action.className = "oce-search-hints-action";
         if (isCalendarSelected(entry.nameKey)) {
-          action.textContent = "選択済み";
-          action.disabled = true;
+          action.textContent = "解除";
+          action.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!deselectCalendar(entry.nameKey)) {
+              showToast("解除できませんでした");
+            }
+          });
         } else {
           action.textContent = "選択";
           action.addEventListener("click", (event) => {
