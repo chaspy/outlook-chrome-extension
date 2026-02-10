@@ -80,8 +80,14 @@ const detectHeaderIndices = (fields) => {
       value.includes("氏名") ||
       value.includes("名前")
   );
+  const idIndex = lowered.findIndex(
+    (value) =>
+      value === "id" ||
+      value.includes("slack") ||
+      value.includes("handle")
+  );
   if (emailIndex >= 0 && nameIndex >= 0) {
-    return { emailIndex, nameIndex, isHeader: true };
+    return { emailIndex, nameIndex, idIndex, isHeader: true };
   }
   return null;
 };
@@ -93,13 +99,20 @@ const getNonEmptyLines = (text) =>
     .filter((line) => line.length > 0);
 
 const guessColumnIndices = (fields) => {
-  if (looksLikeEmail(fields[0]) && fields[1]) {
-    return { emailIndex: 0, nameIndex: 1 };
+  const emailIndex = fields.findIndex((value) => looksLikeEmail(value));
+  const resolvedEmailIndex = emailIndex >= 0 ? emailIndex : 1;
+  const nameIndex =
+    resolvedEmailIndex === 0 ? 1 : 0;
+  let idIndex = -1;
+  if (fields.length >= 3) {
+    for (let i = 0; i < fields.length; i += 1) {
+      if (i !== resolvedEmailIndex && i !== nameIndex) {
+        idIndex = i;
+        break;
+      }
+    }
   }
-  if (looksLikeEmail(fields[1])) {
-    return { emailIndex: 1, nameIndex: 0 };
-  }
-  return { emailIndex: 1, nameIndex: 0 };
+  return { emailIndex: resolvedEmailIndex, nameIndex, idIndex };
 };
 
 const resolveColumnIndices = (lines, delimiter) => {
@@ -108,6 +121,7 @@ const resolveColumnIndices = (lines, delimiter) => {
     return {
       nameIndex: header.nameIndex,
       emailIndex: header.emailIndex,
+      idIndex: header.idIndex ?? -1,
       startIndex: 1
     };
   }
@@ -116,7 +130,14 @@ const resolveColumnIndices = (lines, delimiter) => {
   return { ...guess, startIndex: 0 };
 };
 
-const parseContactsFromLines = (lines, delimiter, nameIndex, emailIndex, startIndex) => {
+const parseContactsFromLines = (
+  lines,
+  delimiter,
+  nameIndex,
+  emailIndex,
+  idIndex,
+  startIndex
+) => {
   const seen = new Set();
   const contacts = [];
   let skipped = 0;
@@ -125,6 +146,7 @@ const parseContactsFromLines = (lines, delimiter, nameIndex, emailIndex, startIn
     const fields = splitLine(lines[i], delimiter);
     const name = (fields[nameIndex] || "").trim();
     const email = (fields[emailIndex] || "").trim();
+    const id = idIndex >= 0 ? (fields[idIndex] || "").trim() : "";
     if (!name || !email || !looksLikeEmail(email)) {
       skipped += 1;
       continue;
@@ -132,7 +154,7 @@ const parseContactsFromLines = (lines, delimiter, nameIndex, emailIndex, startIn
     const key = `${name}\n${email}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    contacts.push({ name, email });
+    contacts.push({ name, email, id });
   }
 
   return { contacts, skipped };
@@ -152,20 +174,26 @@ const parseContacts = (text) => {
     };
   }
 
-  const { nameIndex, emailIndex, startIndex } = resolveColumnIndices(lines, delimiter);
+  const { nameIndex, emailIndex, idIndex, startIndex } = resolveColumnIndices(
+    lines,
+    delimiter
+  );
   const { contacts, skipped } = parseContactsFromLines(
     lines,
     delimiter,
     nameIndex,
     emailIndex,
+    idIndex,
     startIndex
   );
   return { contacts, skipped, error: "" };
 };
 
 const contactsToText = (contacts) => {
-  const header = "full_name\temail_address";
-  const lines = contacts.map((entry) => `${entry.name}\t${entry.email}`);
+  const header = "full_name\temail_address\tid";
+  const lines = contacts.map((entry) =>
+    `${entry.name}\t${entry.email}\t${entry.id || ""}`
+  );
   return [header, ...lines].join("\n");
 };
 

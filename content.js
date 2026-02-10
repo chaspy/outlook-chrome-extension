@@ -9,6 +9,8 @@
   const SELECTED_LIST_ID = "oce-calendar-selected-list";
   const SEARCH_HIT_CLASS = "oce-calendar-search-hit";
   const SEARCH_MISS_CLASS = "oce-calendar-search-miss";
+  const SEARCH_HINTS_ID = "oce-calendar-search-hints";
+  const SEARCH_HINTS_LIMIT = 10;
   const CALENDAR_ROOT_SELECTOR = ".templateColumnContent, [data-calitemid]";
   const USE_OUTLOOK_CONFLICT_FLAG = false;
   const IGNORE_LABEL_PATTERNS = [
@@ -47,6 +49,8 @@
     searchMatches: 0,
     contactsByName: new Map(),
     contactsByEmail: new Map(),
+    contactsByNameIds: new Map(),
+    contactsList: [],
     contactsCount: 0,
     contactsLoaded: false,
     showAllClicked: false,
@@ -95,29 +99,20 @@
     );
   };
 
-  const stripInvisible = (value) =>
-    value
-      .replaceAll(/\s/g, "")
-      .replaceAll("\u200B", "")
-      .replaceAll("\u200C", "")
-      .replaceAll("\u200D", "")
-      .replaceAll("\uFEFF", "");
+  const searchUtils = globalThis.oceSearchUtils;
+  if (!searchUtils) return;
+  const {
+    stripInvisible,
+    normalizeText,
+    normalizeNameKey,
+    normalizeEmail,
+    normalizeId,
+    tokenizeSearchTerm,
+    matchesTokens
+  } = searchUtils;
+
   const isEffectivelyEmpty = (value) => stripInvisible(value).length === 0;
-  const normalizeText = (value) =>
-    stripInvisible(value).replaceAll(/\s+/g, " ").trim();
-  const normalizeNameKey = (value) =>
-    stripInvisible(value).replaceAll(/\s+/g, "").trim().toLowerCase();
-  const normalizeEmail = (value) => value.trim().toLowerCase();
   const isEmailInput = (value) => value.includes("@");
-  const normalizeSearchTerm = (value) => {
-    const cleaned = normalizeText(value || "").toLowerCase();
-    if (!cleaned) return "";
-    const match = cleaned.match(EMAIL_PATTERN);
-    if (match) return match[0].toLowerCase();
-    const stripped = cleaned.replaceAll(/[<>"',;]+/g, "");
-    if (stripped.includes("@")) return stripped.replaceAll(/\s+/g, "");
-    return cleaned;
-  };
 
   const captureIgnoredError = (error, context) => {
     state.ignoredErrors += 1;
@@ -128,6 +123,8 @@
   const updateContactsFromList = (list) => {
     const byName = new Map();
     const byEmail = new Map();
+    const byNameIds = new Map();
+    const uniqueList = new Map();
     let count = 0;
     if (Array.isArray(list)) {
       list.forEach((entry) => {
@@ -135,16 +132,32 @@
         const name = normalizeText(entry.name || "");
         const nameKey = normalizeNameKey(name);
         const email = normalizeEmail(entry.email || "");
+        const id = normalizeId(entry.id || "");
         if (!nameKey || !email) return;
+        const uniqueKey = `${nameKey}\n${email}\n${id}`;
+        if (!uniqueList.has(uniqueKey)) {
+          uniqueList.set(uniqueKey, {
+            name,
+            nameKey,
+            email,
+            id
+          });
+        }
         if (!byName.has(nameKey)) byName.set(nameKey, new Set());
         byName.get(nameKey).add(email);
         if (!byEmail.has(email)) byEmail.set(email, new Set());
         byEmail.get(email).add(nameKey);
+        if (id) {
+          if (!byNameIds.has(nameKey)) byNameIds.set(nameKey, new Set());
+          byNameIds.get(nameKey).add(id);
+        }
         count += 1;
       });
     }
     state.contactsByName = byName;
     state.contactsByEmail = byEmail;
+    state.contactsByNameIds = byNameIds;
+    state.contactsList = [...uniqueList.values()];
     state.contactsCount = count;
     state.contactsLoaded = true;
   };
@@ -176,6 +189,8 @@
 
   const getEmailsForName = (nameKey) => state.contactsByName.get(nameKey);
   const getNamesForEmail = (emailKey) => state.contactsByEmail.get(emailKey);
+  const getIdsForName = (nameKey) => state.contactsByNameIds.get(nameKey);
+  const getContactsList = () => state.contactsList || [];
 
   const getUniqueEmailForName = (nameKey) => {
     const emails = getEmailsForName(nameKey);
@@ -315,19 +330,102 @@
     return [...rows];
   };
 
-  const matchesCalendarSearch = (name, term) => {
-    const normalizedTerm = normalizeSearchTerm(term);
-    if (!normalizedTerm) return true;
+  const matchesCalendarSearch = (name, tokens) => {
+    if (!tokens || tokens.length === 0) return true;
     const nameKey = normalizeNameKey(name);
-    const termKey = normalizeNameKey(normalizedTerm);
-    if (termKey && nameKey.includes(termKey)) return true;
     const emails = getEmailsForName(nameKey);
-    if (!emails) return false;
-    const emailTerm = normalizeEmail(normalizedTerm);
-    for (const email of emails) {
-      if (normalizeEmail(email).includes(emailTerm)) return true;
+    const ids = getIdsForName(nameKey);
+    return matchesTokens(tokens, { nameKey, emails, ids });
+  };
+
+  const findCalendarMatches = (term) => {
+    const tokens = tokenizeSearchTerm(term);
+    const matches = [];
+    const matchedNameKeys = new Set();
+    let total = 0;
+    if (tokens.length === 0) {
+      return { matches, matchedNameKeys, total };
     }
-    return false;
+    const buttons = getCalendarOptionButtons();
+    const seen = new Set();
+    for (const button of buttons) {
+      const label = button.querySelector(".ATH58");
+      const raw = label ? label.textContent : button.textContent;
+      const name = normalizeText(raw || "");
+      if (!name) continue;
+      const nameKey = normalizeNameKey(name);
+      if (seen.has(nameKey)) continue;
+      seen.add(nameKey);
+      if (!matchesCalendarSearch(name, tokens)) continue;
+      matchedNameKeys.add(nameKey);
+      total += 1;
+      if (matches.length < SEARCH_HINTS_LIMIT) {
+        matches.push({ name, nameKey });
+      }
+    }
+    return { matches, matchedNameKeys, total };
+  };
+
+  const findContactMatches = (term, excludedNameKeys) => {
+    const tokens = tokenizeSearchTerm(term);
+    if (tokens.length === 0) return { matches: [], total: 0 };
+    const matches = [];
+    let total = 0;
+    const excluded = excludedNameKeys || new Set();
+    for (const entry of getContactsList()) {
+      if (excluded.has(entry.nameKey)) continue;
+      const emails = entry.email ? [entry.email] : [];
+      const ids = entry.id ? [entry.id] : [];
+      if (!matchesTokens(tokens, { nameKey: entry.nameKey, emails, ids })) {
+        continue;
+      }
+      total += 1;
+      if (matches.length < SEARCH_HINTS_LIMIT) {
+        matches.push(entry);
+      }
+    }
+    return { matches, total };
+  };
+
+  const setNativeInputValue = (input, value) => {
+    const prototype = Object.getPrototypeOf(input);
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+    const setter = descriptor?.set;
+    if (setter) {
+      setter.call(input, value);
+    } else {
+      input.value = value;
+    }
+  };
+
+  const findOutlookSearchInput = () => {
+    const docs = getAccessibleDocuments();
+    for (const doc of docs) {
+      const input = doc.getElementById("topSearchInput");
+      if (input) return input;
+      const box = doc.getElementById("searchBoxId-Calendar");
+      if (box) {
+        const candidate = box.querySelector(
+          "input[aria-label=\"Search\"], input[type=\"search\"], input"
+        );
+        if (candidate) return candidate;
+      }
+    }
+    return null;
+  };
+
+  const registerContactInOutlook = (entry) => {
+    const input = findOutlookSearchInput();
+    if (!input) {
+      showToast("Outlookの検索欄が見つかりません");
+      return;
+    }
+    const value = entry.email || entry.name;
+    setNativeInputValue(input, value);
+    input.focus();
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    showToast("Outlookの検索欄に入力しました");
   };
 
   const SHOW_ALL_LABELS = ["Show all", "すべて表示"];
@@ -420,6 +518,28 @@
       const key = normalizeNameKey(raw || "");
       return key === nameKey;
     });
+  };
+
+  const isCalendarSelected = (nameKey) =>
+    findCalendarButtonsForName(nameKey).some(
+      (button) => button.getAttribute("aria-selected") === "true"
+    );
+
+  const selectCalendar = (nameKey) => {
+    const buttons = findCalendarButtonsForName(nameKey);
+    const target = buttons.find(
+      (button) => button.getAttribute("aria-selected") !== "true"
+    );
+    if (target) {
+      target.click();
+      showToast("選択しました");
+      return true;
+    }
+    if (buttons.length > 0) {
+      showToast("選択済みです");
+      return true;
+    }
+    return false;
   };
 
   const deselectCalendar = (nameKey) => {
@@ -560,9 +680,9 @@
     return normalizeText(raw || "");
   };
 
-  const applyRowMatch = (row, term, groupHasMatch, matchState) => {
+  const applyRowMatch = (row, tokens, groupHasMatch, matchState) => {
     const name = getCalendarRowName(row);
-    const match = matchesCalendarSearch(name, term);
+    const match = matchesCalendarSearch(name, tokens);
     setRowMatchState(row, match);
     matchState.candidates += 1;
     if (!match) return;
@@ -582,14 +702,14 @@
     }
   };
 
-  const applySearchToDoc = (doc, term) => {
+  const applySearchToDoc = (doc, term, tokens) => {
     const listRoot = findCalendarListRootInDoc(doc);
     if (!listRoot) return { candidates: 0, matches: 0, firstMatch: null };
     const listContainer = listRoot.ul;
     const groups = [...listContainer.querySelectorAll("li[aria-label]")];
     const rows = getCalendarRows(listContainer);
 
-    if (!term) {
+    if (!tokens || tokens.length === 0) {
       clearSearchClasses(groups, rows);
       return { candidates: 0, matches: 0, firstMatch: null };
     }
@@ -598,7 +718,7 @@
     const matchState = { candidates: 0, matches: 0, firstMatch: null };
 
     for (const row of rows) {
-      applyRowMatch(row, term, groupHasMatch, matchState);
+      applyRowMatch(row, tokens, groupHasMatch, matchState);
     }
 
     updateGroupMatchClasses(groups, groupHasMatch);
@@ -606,8 +726,9 @@
     return matchState;
   };
 
-  const applyCalendarSearch = (raw) => {
-    const term = normalizeSearchTerm(raw);
+  const applyCalendarSearch = (raw = "") => {
+    const rawTerm = raw;
+    const tokens = tokenizeSearchTerm(rawTerm);
     const docs = collectDocuments(document);
     state.searchCandidates = 0;
     state.searchMatches = 0;
@@ -615,18 +736,19 @@
     let firstMatch = null;
 
     for (const doc of docs) {
-      const result = applySearchToDoc(doc, term);
+      const result = applySearchToDoc(doc, rawTerm, tokens);
       state.searchCandidates += result.candidates;
       state.searchMatches += result.matches;
       if (!firstMatch && result.firstMatch) firstMatch = result.firstMatch;
     }
 
-    if (firstMatch && term !== state.searchTerm) {
+    if (firstMatch && rawTerm !== state.searchTerm) {
       firstMatch.scrollIntoView({ block: "center", inline: "nearest" });
     }
-    state.searchTerm = term;
+    state.searchTerm = rawTerm;
     state.lastSearchAppliedAt = Date.now();
     renderSelectedSummary();
+    renderSearchHints(rawTerm);
   };
 
   const ensureSearchBox = () => {
@@ -640,7 +762,7 @@
     const input = document.createElement("input");
     input.id = SEARCH_INPUT_ID;
     input.type = "search";
-    input.placeholder = "検索（名前/メール）";
+    input.placeholder = "検索（名前/メール/ID）";
     input.autocomplete = "off";
     input.spellcheck = false;
     input.value = state.searchTerm;
@@ -656,6 +778,13 @@
     });
 
     container.appendChild(input);
+
+    const hints = document.createElement("div");
+    hints.id = SEARCH_HINTS_ID;
+    hints.className = "oce-search-hints";
+    hints.hidden = true;
+    container.appendChild(hints);
+
     listRoot.parentElement?.insertBefore(container, listRoot);
     if (state.searchTerm) applyCalendarSearch(state.searchTerm);
   };
@@ -693,6 +822,173 @@
 
     searchBox.after(summary);
     renderSelectedSummary();
+  };
+
+  const renderSearchHints = (rawTerm) => {
+    const hints = document.getElementById(SEARCH_HINTS_ID);
+    if (!hints) return;
+    hints.textContent = "";
+    hints.hidden = true;
+
+    if (!state.contactsLoaded) return;
+    const tokens = tokenizeSearchTerm(rawTerm);
+    if (tokens.length === 0) return;
+
+    const calendarMatches = findCalendarMatches(rawTerm);
+    const contactMatches = findContactMatches(rawTerm, calendarMatches.matchedNameKeys);
+    if (calendarMatches.total === 0 && contactMatches.total === 0) return;
+
+    hints.hidden = false;
+
+    const renderSection = (titleText, total, items, renderItem) => {
+      const section = document.createElement("div");
+      section.className = "oce-search-section";
+
+      const title = document.createElement("div");
+      title.className = "oce-search-hints-title";
+      title.textContent = titleText;
+
+      const count = document.createElement("span");
+      count.className = "oce-search-hints-count";
+      count.textContent = `${total}`;
+      title.appendChild(count);
+
+      section.appendChild(title);
+
+      if (items.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "oce-search-hints-empty";
+        empty.textContent = "該当なし";
+        section.appendChild(empty);
+      } else {
+        const list = document.createElement("div");
+        list.className = "oce-search-hints-list";
+        items.forEach((item) => list.appendChild(renderItem(item)));
+        section.appendChild(list);
+      }
+
+      if (total > items.length) {
+        const more = document.createElement("div");
+        more.className = "oce-search-hints-more";
+        more.textContent = `他${total - items.length}件`;
+        section.appendChild(more);
+      }
+
+      hints.appendChild(section);
+    };
+
+    renderSection(
+      "予定表リストの一致",
+      calendarMatches.total,
+      calendarMatches.matches,
+      (entry) => {
+        const row = document.createElement("div");
+        row.className = "oce-search-hints-row";
+
+        const info = document.createElement("div");
+        info.className = "oce-search-hints-info";
+
+        const name = document.createElement("div");
+        name.className = "oce-search-hints-name";
+        name.textContent = entry.name;
+        info.appendChild(name);
+
+        const emails = getEmailsForName(entry.nameKey);
+        if (emails && emails.size > 0) {
+          const email = document.createElement("div");
+          email.className = "oce-search-hints-email";
+          const list = [...emails];
+          const preview = list.slice(0, 2).join(", ");
+          email.textContent =
+            list.length > 2 ? `${preview} 他${list.length - 2}件` : preview;
+          info.appendChild(email);
+        }
+
+        const ids = getIdsForName(entry.nameKey);
+        if (ids && ids.size > 0) {
+          const id = document.createElement("div");
+          id.className = "oce-search-hints-id";
+          const list = [...ids];
+          const preview = list.slice(0, 2).map((value) => `@${value}`).join(", ");
+          id.textContent =
+            list.length > 2 ? `${preview} 他${list.length - 2}件` : preview;
+          info.appendChild(id);
+        }
+
+        row.appendChild(info);
+
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "oce-search-hints-action";
+        if (isCalendarSelected(entry.nameKey)) {
+          action.textContent = "解除";
+          action.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!deselectCalendar(entry.nameKey)) {
+              showToast("解除できませんでした");
+            }
+          });
+        } else {
+          action.textContent = "選択";
+          action.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!selectCalendar(entry.nameKey)) {
+              showToast("選択できませんでした");
+            }
+          });
+        }
+        row.appendChild(action);
+
+        return row;
+      }
+    );
+
+    renderSection(
+      "登録済みのみの一致",
+      contactMatches.total,
+      contactMatches.matches,
+      (entry) => {
+        const row = document.createElement("div");
+        row.className = "oce-search-hints-row";
+
+        const info = document.createElement("div");
+        info.className = "oce-search-hints-info";
+
+        const name = document.createElement("div");
+        name.className = "oce-search-hints-name";
+        name.textContent = entry.name;
+        info.appendChild(name);
+
+        const email = document.createElement("div");
+        email.className = "oce-search-hints-email";
+        email.textContent = entry.email;
+        info.appendChild(email);
+
+        if (entry.id) {
+          const id = document.createElement("div");
+          id.className = "oce-search-hints-id";
+          id.textContent = `@${entry.id}`;
+          info.appendChild(id);
+        }
+
+        row.appendChild(info);
+
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "oce-search-hints-action";
+        action.textContent = "登録";
+        action.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          registerContactInOutlook(entry);
+        });
+        row.appendChild(action);
+
+        return row;
+      }
+    );
   };
 
   const ensureSelectionObserver = () => {
@@ -1167,9 +1463,8 @@
     const searchInput = document.getElementById(SEARCH_INPUT_ID);
     const searchInputValue = searchInput ? searchInput.value : "";
     const searchBoxPresent = !!document.getElementById(SEARCH_BOX_ID);
-    const effectiveSearchTerm = normalizeSearchTerm(
-      searchInputValue || state.searchTerm || ""
-    );
+    const effectiveSearchRaw = searchInputValue || state.searchTerm || "";
+    const effectiveSearchTokens = tokenizeSearchTerm(effectiveSearchRaw);
 
     const rowDiagnostics = [];
     let rowsTotal = 0;
@@ -1199,7 +1494,7 @@
           name,
           nameKey,
           emails,
-          match: matchesCalendarSearch(name, effectiveSearchTerm),
+          match: matchesCalendarSearch(name, effectiveSearchTokens),
           hasHitClass: row.classList.contains(SEARCH_HIT_CLASS),
           hasMissClass: row.classList.contains(SEARCH_MISS_CLASS)
         });
@@ -1209,7 +1504,12 @@
     const contactSamples = [];
     for (const [name, emails] of state.contactsByName.entries()) {
       if (contactSamples.length >= 10) break;
-      contactSamples.push({ nameKey: name, emails: [...emails] });
+      const ids = state.contactsByNameIds.get(name);
+      contactSamples.push({
+        nameKey: name,
+        emails: [...emails],
+        ids: ids ? [...ids] : []
+      });
     }
 
     const iframes = [...document.querySelectorAll("iframe")].map((frame) => {
@@ -1240,14 +1540,15 @@
       contactsCount: state.contactsCount,
       contactsByNameCount: state.contactsByName.size,
       contactsByEmailCount: state.contactsByEmail.size,
+      contactsByNameIdsCount: state.contactsByNameIds.size,
       contactsLoaded: state.contactsLoaded,
       contactsSamples: contactSamples,
       ignoredErrors: state.ignoredErrors,
       lastIgnoredError: state.lastIgnoredError,
       searchTerm: state.searchTerm,
       searchInputValue,
+      searchTokens: effectiveSearchTokens,
       searchBoxPresent,
-      effectiveSearchTerm,
       searchCandidates: state.searchCandidates,
       searchMatches: state.searchMatches,
       searchHitClassCount: document.querySelectorAll(`.${SEARCH_HIT_CLASS}`).length,
