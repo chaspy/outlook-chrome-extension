@@ -33,7 +33,7 @@ test("tokenizeSearchTerm splits tokens", () => {
 test("matchesTokens matches id and email", () => {
   assert.equal(matches("ojiry"), true);
   assert.equal(matches("ojiry yoshi"), true);
-  assert.equal(matches("ojiry yishi"), true);
+  assert.equal(matches("ojiry yishi"), false);
   assert.equal(matches("ojiry nope"), false);
   assert.equal(matches("ojir"), true);
 });

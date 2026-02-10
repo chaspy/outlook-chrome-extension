@@ -40,74 +40,9 @@
       .filter((token) => token.length > 0 && token !== "@");
   };
 
-  const countMismatches = (left, right) => {
-    let mismatches = 0;
-    let firstMismatch = -1;
-    for (let i = 0; i < left.length; i += 1) {
-      if (left[i] !== right[i]) {
-        mismatches += 1;
-        if (firstMismatch < 0) firstMismatch = i;
-        if (mismatches > 2) break;
-      }
-    }
-    return { mismatches, firstMismatch };
-  };
-
-  const isSingleSwap = (left, right, index) =>
-    index >= 0 &&
-    index + 1 < left.length &&
-    left[index] === right[index + 1] &&
-    left[index + 1] === right[index];
-
-  const isSameLengthDistanceOneOrLess = (left, right) => {
-    const { mismatches, firstMismatch } = countMismatches(left, right);
-    if (mismatches <= 1) return true;
-    if (mismatches === 2) return isSingleSwap(left, right, firstMismatch);
-    return false;
-  };
-
-  const isInsertDeleteDistanceOneOrLess = (shorter, longer) => {
-    let i = 0;
-    let j = 0;
-    let skips = 0;
-    while (i < shorter.length && j < longer.length) {
-      if (shorter[i] === longer[j]) {
-        i += 1;
-        j += 1;
-        continue;
-      }
-      skips += 1;
-      if (skips > 1) return false;
-      j += 1;
-    }
-    return true;
-  };
-
-  const isEditDistanceOneOrLess = (left, right) => {
-    if (left === right) return true;
-    const lengthDiff = Math.abs(left.length - right.length);
-    if (lengthDiff > 1) return false;
-    if (left.length === right.length) {
-      return isSameLengthDistanceOneOrLess(left, right);
-    }
-    const [shorter, longer] = left.length < right.length ? [left, right] : [right, left];
-    return isInsertDeleteDistanceOneOrLess(shorter, longer);
-  };
-
   const isLooseMatch = (haystack, needle) => {
     if (!haystack || !needle) return false;
-    if (haystack.includes(needle)) return true;
-    if (needle.length < 4) return false;
-    const minLength = Math.max(1, needle.length - 1);
-    const maxLength = needle.length + 1;
-    for (let length = minLength; length <= maxLength; length += 1) {
-      if (haystack.length < length) continue;
-      for (let i = 0; i <= haystack.length - length; i += 1) {
-        const slice = haystack.slice(i, i + length);
-        if (isEditDistanceOneOrLess(slice, needle)) return true;
-      }
-    }
-    return false;
+    return haystack.includes(needle);
   };
 
   const matchesToken = (token, { nameKey, emails, ids }) => {
@@ -137,7 +72,6 @@
     normalizeEmail,
     normalizeId,
     tokenizeSearchTerm,
-    isEditDistanceOneOrLess,
     isLooseMatch,
     matchesToken,
     matchesTokens
