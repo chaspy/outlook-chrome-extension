@@ -18,15 +18,16 @@ This is a Chrome extension that helps you work with Outlook Web Calendar.
 ### まず必要なもの
 
 - Google Chrome
-- Outlook Web (`outlook.office.com`, `outlook.office365.com`, `outlook.live.com`) の利用権限
+- Outlook Web の利用権限
+  ([outlook.office.com](https://outlook.office.com/), [outlook.office365.com](https://outlook.office365.com/), [outlook.live.com](https://outlook.live.com/))
 
 ### 5分セットアップ（非エンジニア向け）
 
-1. Releases ページを開く: `https://github.com/chaspy/outlook-chrome-extension/releases`
+1. [Releases ページを開く](https://github.com/chaspy/outlook-chrome-extension/releases)
 2. 最新リリースの `Assets` から `outlook-chrome-extension-vX.Y.Z.zip` をダウンロードする  
    (`Source code (zip)` ではなく、`outlook-chrome-extension-...zip` を選んでください)
 3. ダウンロードした ZIP を展開する
-4. Chrome で `chrome://extensions/` を開く
+4. Chrome で [chrome://extensions/](chrome://extensions/) を開く
 5. 右上の「デベロッパー モード」を ON
 6. 「パッケージ化されていない拡張機能を読み込む」をクリック
 7. 展開したフォルダ（`manifest.json` があるフォルダ）を選ぶ
@@ -53,6 +54,9 @@ This is a Chrome extension that helps you work with Outlook Web Calendar.
 2. `連絡先CSV/TSV` 欄に貼り付ける
 3. `保存` を押す
 
+推奨: Google スプレッドシート / Excel で「氏名・メール・ID」の3列を選択してコピーし、
+そのまま貼り付けてください（タブ区切り TSV として読み取られます）。
+
 入力形式（タブ / カンマ / セミコロン区切りに対応）:
 
 ```text
@@ -76,7 +80,19 @@ Suzuki Hanako,suzuki.hanako@example.com,suzuki
 
 - ボタンや検索欄が出ない: Outlook の予定表ページを再読み込み
 - `取得失敗` が出る: Outlook タブをアクティブにして再実行
-- 拡張更新後に挙動が変: `chrome://extensions/` で再読み込み
+- 拡張更新後に挙動が変: [chrome://extensions/](chrome://extensions/) で再読み込み
+
+### 新しいバージョンへの更新手順
+
+連絡先データ（`chrome.storage.local`）を消さないため、次の手順を推奨します。
+
+1. [Releases ページ](https://github.com/chaspy/outlook-chrome-extension/releases) から最新版 ZIP をダウンロードして展開
+2. 今使っている拡張フォルダに、新しいファイルを上書きコピー
+3. [chrome://extensions/](chrome://extensions/) でこの拡張の `再読み込み` をクリック
+4. Outlook Web を再読み込みして動作確認
+
+上書きが難しい場合は、拡張を入れ直しても構いません。  
+ただし再インストール時は連絡先データが消える可能性があります。
 
 ### データについて
 
@@ -100,15 +116,16 @@ This extension helps you on Outlook Web Calendar with:
 ### Requirements
 
 - Google Chrome
-- Access to Outlook Web (`outlook.office.com`, `outlook.office365.com`, `outlook.live.com`)
+- Access to Outlook Web
+  ([outlook.office.com](https://outlook.office.com/), [outlook.office365.com](https://outlook.office365.com/), [outlook.live.com](https://outlook.live.com/))
 
 ### 5-minute setup (for non-engineers)
 
-1. Open Releases: `https://github.com/chaspy/outlook-chrome-extension/releases`
+1. [Open Releases](https://github.com/chaspy/outlook-chrome-extension/releases)
 2. In the latest release `Assets`, download `outlook-chrome-extension-vX.Y.Z.zip`  
    (Do not choose `Source code (zip)`; choose `outlook-chrome-extension-...zip`.)
 3. Extract the downloaded ZIP
-4. Open `chrome://extensions/` in Chrome
+4. Open [chrome://extensions/](chrome://extensions/) in Chrome
 5. Turn on `Developer mode`
 6. Click `Load unpacked`
 7. Select the extracted folder (the one that contains `manifest.json`)
@@ -135,6 +152,9 @@ This extension helps you on Outlook Web Calendar with:
 2. Paste data into `連絡先CSV/TSV`
 3. Click `保存` (Save)
 
+Recommended: In Google Sheets / Excel, select the 3 columns (`name`, `email`, `id`),
+copy them, and paste directly (it will be parsed as tab-separated TSV).
+
 Supported delimiters: tab, comma, semicolon.
 
 ```text
@@ -158,7 +178,19 @@ In the popup `Debug` section:
 
 - No button/search box: reload Outlook Calendar page
 - `取得失敗` (Fetch failed): activate an Outlook tab and retry
-- Strange behavior after updates: reload extension in `chrome://extensions/`
+- Strange behavior after updates: reload extension in [chrome://extensions/](chrome://extensions/)
+
+### Updating To A New Version
+
+To keep contact data (`chrome.storage.local`), use this flow:
+
+1. Download and extract the latest ZIP from [Releases](https://github.com/chaspy/outlook-chrome-extension/releases)
+2. Overwrite files in the folder currently loaded by Chrome
+3. Click `Reload` for this extension in [chrome://extensions/](chrome://extensions/)
+4. Reload Outlook Web and verify behavior
+
+If overwriting files is difficult, reinstalling is also possible.  
+Note: reinstalling may clear saved contact data.
 
 ### Data handling
 
