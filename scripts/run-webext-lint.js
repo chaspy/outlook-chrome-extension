@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+/* eslint-env node */
+
 const fs = require("node:fs");
 const { spawnSync } = require("node:child_process");
 
