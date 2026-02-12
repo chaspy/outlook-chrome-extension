@@ -60,14 +60,11 @@ jobs:
       - name: Package extension
         run: |
           mkdir -p dist
-          files=(manifest.json content.js content.css popup.html popup.js popup.css)
-          if [ -d icons ]; then
-            files+=(icons)
-          fi
-          if [ -d assets ]; then
-            files+=(assets)
-          fi
-          zip -r "dist/outlook-chrome-extension-${{ steps.meta.outputs.tag }}.zip" "${files[@]}"
+          # Package all tracked files so newly added files are included automatically.
+          git archive \
+            --format=zip \
+            --output "dist/outlook-chrome-extension-${{ steps.meta.outputs.tag }}.zip" \
+            HEAD
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
