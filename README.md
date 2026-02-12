@@ -19,7 +19,7 @@ This is a Chrome extension that helps you work with Outlook Web Calendar.
 
 - Google Chrome
 - Outlook Web の利用権限
-  ([outlook.office.com](https://outlook.office.com/), [outlook.office365.com](https://outlook.office365.com/), [outlook.live.com](https://outlook.live.com/))
+  ([outlook.cloud.microsoft](https://outlook.cloud.microsoft/), [outlook.office.com](https://outlook.office.com/), [outlook.office365.com](https://outlook.office365.com/), [outlook.live.com](https://outlook.live.com/))
 
 ### 5分セットアップ（非エンジニア向け）
 
@@ -117,7 +117,7 @@ This extension helps you on Outlook Web Calendar with:
 
 - Google Chrome
 - Access to Outlook Web
-  ([outlook.office.com](https://outlook.office.com/), [outlook.office365.com](https://outlook.office365.com/), [outlook.live.com](https://outlook.live.com/))
+  ([outlook.cloud.microsoft](https://outlook.cloud.microsoft/), [outlook.office.com](https://outlook.office.com/), [outlook.office365.com](https://outlook.office365.com/), [outlook.live.com](https://outlook.live.com/))
 
 ### 5-minute setup (for non-engineers)
 
