@@ -26,14 +26,11 @@ jobs:
         id: meta
         run: |
           last_tag=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
-          if [ -z "$last_tag" ]; then
-            base_version=$(node -p "require('./manifest.json').version || '0.0.1'")
-            version="$base_version"
-          else
-            ver="${last_tag#v}"
-            IFS='.' read -r major minor patch <<< "$ver"
-            patch=$((patch + 1))
-            version="${major}.${minor}.${patch}"
+          version=$(node -p "require('./manifest.json').version || ''")
+          version="${version#v}"
+          if [ -z "$version" ]; then
+            echo "manifest.json version is empty" >&2
+            exit 1
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
