@@ -60,11 +60,37 @@ jobs:
       - name: Package extension
         run: |
           mkdir -p dist
-          # Package all tracked files so newly added files are included automatically.
-          git archive \
-            --format=zip \
-            --output "dist/outlook-chrome-extension-${{ steps.meta.outputs.tag }}.zip" \
-            HEAD
+          pkg_dir="dist/package"
+          rm -rf "$pkg_dir"
+          mkdir -p "$pkg_dir"
+
+          # Export all tracked files so newly added files are included automatically.
+          git archive --format=tar HEAD | tar -xf - -C "$pkg_dir"
+
+          # Keep packaged manifest/package version aligned with release tag version.
+          node - "$pkg_dir" "${{ steps.meta.outputs.version }}" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const pkgDir = process.argv[2];
+          const version = process.argv[3];
+          const targets = ['manifest.json', 'package.json'];
+
+          for (const file of targets) {
+            const fullPath = path.join(pkgDir, file);
+            if (!fs.existsSync(fullPath)) {
+              continue;
+            }
+            const json = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+            json.version = version;
+            fs.writeFileSync(fullPath, `${JSON.stringify(json, null, 2)}\n`);
+          }
+          NODE
+
+          (
+            cd "$pkg_dir"
+            zip -r "../outlook-chrome-extension-${{ steps.meta.outputs.tag }}.zip" .
+          )
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
