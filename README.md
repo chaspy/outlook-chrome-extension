@@ -22,12 +22,15 @@ This is a Chrome extension that helps you work with Outlook Web Calendar.
 
 ### 5分セットアップ（非エンジニア向け）
 
-1. このリポジトリをダウンロードして展開する（ZIPでもOK）
-2. Chrome で `chrome://extensions/` を開く
-3. 右上の「デベロッパー モード」を ON
-4. 「パッケージ化されていない拡張機能を読み込む」をクリック
-5. 展開したフォルダ（`manifest.json` があるフォルダ）を選ぶ
-6. Outlook Web の予定表ページを再読み込みする
+1. Releases ページを開く: `https://github.com/chaspy/outlook-chrome-extension/releases`
+2. 最新リリースの `Assets` から `outlook-chrome-extension-vX.Y.Z.zip` をダウンロードする  
+   (`Source code (zip)` ではなく、`outlook-chrome-extension-...zip` を選んでください)
+3. ダウンロードした ZIP を展開する
+4. Chrome で `chrome://extensions/` を開く
+5. 右上の「デベロッパー モード」を ON
+6. 「パッケージ化されていない拡張機能を読み込む」をクリック
+7. 展開したフォルダ（`manifest.json` があるフォルダ）を選ぶ
+8. Outlook Web の予定表ページを再読み込みする
 
 ### 使い方
 
@@ -101,12 +104,15 @@ This extension helps you on Outlook Web Calendar with:
 
 ### 5-minute setup (for non-engineers)
 
-1. Download and extract this repository (ZIP is fine)
-2. Open `chrome://extensions/` in Chrome
-3. Turn on `Developer mode`
-4. Click `Load unpacked`
-5. Select the extracted folder (the one that contains `manifest.json`)
-6. Reload the Outlook Web Calendar page
+1. Open Releases: `https://github.com/chaspy/outlook-chrome-extension/releases`
+2. In the latest release `Assets`, download `outlook-chrome-extension-vX.Y.Z.zip`  
+   (Do not choose `Source code (zip)`; choose `outlook-chrome-extension-...zip`.)
+3. Extract the downloaded ZIP
+4. Open `chrome://extensions/` in Chrome
+5. Turn on `Developer mode`
+6. Click `Load unpacked`
+7. Select the extracted folder (the one that contains `manifest.json`)
+8. Reload the Outlook Web Calendar page
 
 ### How to use
 
