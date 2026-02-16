@@ -24,7 +24,14 @@
     /^辞退:/
   ];
   const IGNORE_STATUS_PATTERNS = [/,\s*Free\b/i, /,\s*空き\b/, /,\s*空き時間\b/];
-  const ATTENDEE_PLACEHOLDERS = ["Invite attendees", "出席者を追加"];
+  const ATTENDEE_PLACEHOLDERS = [
+    "Invite attendees",
+    "Invite required attendees",
+    "出席者を追加",
+    "必須出席者を招待します"
+  ];
+  const TITLE_PLACEHOLDERS = ["Add a title", "Add title", "タイトルを追加", "タイトルの追加"];
+  const TITLE_ARIA_LABELS = ["Add details for the event", "タイトル"];
   const IGNORE_CALENDAR_NAMES = new Set(["Calendar", "Birthdays", "Japan holidays"]);
   const ATTENDEE_AUTOFILL_ATTR = "data-oce-attendees-filled";
   const ATTENDEE_AUTOFILLING_ATTR = "data-oce-attendees-filling";
@@ -1028,21 +1035,86 @@
     );
   };
 
-  const findSelfEmail = (doc) => {
-    const root = doc || document;
-    const nodes = [...root.querySelectorAll(".ms-Dropdown-title, .ms-Dropdown, [role=\"combobox\"]")];
-    for (const node of nodes) {
-      const text = node.textContent || "";
-      const match = text.match(EMAIL_PATTERN);
-      if (match) return match[0];
+  const trimEmailToken = (token) => {
+    const allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._%+-@";
+    let start = 0;
+    let end = token.length;
+    while (start < end && !allowed.includes(token[start])) start += 1;
+    while (end > start && !allowed.includes(token[end - 1])) end -= 1;
+    return token.slice(start, end);
+  };
+
+  const isLikelyEmail = (value) => {
+    if (!value) return false;
+    const at = value.indexOf("@");
+    if (at <= 0 || at !== value.lastIndexOf("@")) return false;
+
+    const local = value.slice(0, at);
+    const domain = value.slice(at + 1);
+    if (!local || !domain) return false;
+    if (local.startsWith(".") || local.endsWith(".")) return false;
+    if (domain.startsWith(".") || domain.endsWith(".")) return false;
+    if (domain.includes("..")) return false;
+
+    const dot = domain.lastIndexOf(".");
+    if (dot <= 0) return false;
+    const tld = domain.slice(dot + 1);
+    return tld.length >= 2;
+  };
+
+  const getEditorPillEmailKeys = (editor) => {
+    const pills = [...editor.querySelectorAll("._EType_RECIPIENT_ENTITY")];
+    const emails = new Set();
+    pills.forEach((pill) => {
+      const source = `${pill.getAttribute("aria-label") || ""} ${pill.textContent || ""}`;
+      const tokens = source.split(/\s+/);
+      tokens.forEach((token) => {
+        const candidate = trimEmailToken(token);
+        if (!isLikelyEmail(candidate)) return;
+        const key = normalizeEmail(candidate);
+        if (key) emails.add(key);
+      });
+    });
+    return emails;
+  };
+
+  const extractFirstEmail = (text) => {
+    if (!text) return "";
+    const match = text.match(EMAIL_PATTERN);
+    return match ? match[0] : "";
+  };
+
+  const getSelfEmailCandidates = (root) => {
+    if (!root?.querySelectorAll) return [];
+    return [
+      ...root.querySelectorAll(".mDZXX, .fui-Dropdown__button, .ms-Dropdown-title, .ms-Dropdown")
+    ];
+  };
+
+  const findSelfEmail = (doc, preferredRoot) => {
+    const rootDoc = doc || document;
+    const roots = [preferredRoot, rootDoc].filter(Boolean);
+    for (const root of roots) {
+      const nodes = getSelfEmailCandidates(root);
+      for (const node of nodes) {
+        const fromAria = extractFirstEmail(node.getAttribute("aria-label") || "");
+        if (fromAria) return fromAria;
+        const fromText = extractFirstEmail(node.textContent || "");
+        if (fromText) return fromText;
+      }
     }
     return "";
   };
 
-  const ensureSelfEmail = (doc) => {
+  const ensureSelfEmail = (doc, preferredRoot) => {
+    const preferredEmail = findSelfEmail(doc, preferredRoot);
+    if (preferredEmail) {
+      state.selfEmail = preferredEmail;
+      return preferredEmail;
+    }
     if (state.selfEmail) return state.selfEmail;
-    const email = findSelfEmail(doc);
-    if (email) state.selfEmail = email;
+    const fallbackEmail = findSelfEmail(doc, doc?.body || document.body);
+    if (fallbackEmail) state.selfEmail = fallbackEmail;
     return state.selfEmail;
   };
 
@@ -1074,6 +1146,41 @@
     });
 
     return fallback;
+  };
+
+  const getComposeRootForEditor = (editor) =>
+    editor.closest("[data-app-section=\"CalendarQuickCompose\"]") ||
+    editor.closest("[data-app-section=\"Form_Content\"]") ||
+    editor.closest("[role=\"dialog\"]") ||
+    editor.ownerDocument?.body ||
+    document.body;
+
+  const isTitleInputField = (input) => {
+    const placeholder = input.getAttribute("placeholder") || "";
+    if (TITLE_PLACEHOLDERS.some((value) => placeholder.includes(value))) return true;
+
+    const ariaLabel = input.getAttribute("aria-label") || "";
+    return TITLE_ARIA_LABELS.some((value) => ariaLabel.includes(value));
+  };
+
+  const findTitleInputForEditor = (editor) => {
+    const root = getComposeRootForEditor(editor);
+    const candidates = [...root.querySelectorAll("input")].filter(isVisible);
+    return candidates.find((input) => isTitleInputField(input)) || null;
+  };
+
+  const isBlankNewEventDraft = (editor) => {
+    const titleInput = findTitleInputForEditor(editor);
+    if (!titleInput) return false;
+
+    const hasTitle = !isEffectivelyEmpty(titleInput.value || "");
+    if (hasTitle) return false;
+
+    const hasPills = editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length > 0;
+    if (hasPills) return false;
+
+    const hasAttendeeText = !isEffectivelyEmpty(editor.textContent || "");
+    return !hasAttendeeText;
   };
 
   const findSuggestionItems = (editor) => {
@@ -1149,11 +1256,6 @@
     return null;
   };
 
-  const clearEditor = (editor) => {
-    editor.textContent = "";
-    editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
-  };
-
   const placeCaretAtEnd = (editor) => {
     editor.focus();
     const selection = globalThis.getSelection?.();
@@ -1196,52 +1298,9 @@
     );
   };
 
-  const emitKey = (editor, key, code, keyCode) => {
-    const eventInit = {
-      key,
-      code,
-      keyCode,
-      which: keyCode,
-      charCode: key.length === 1 ? key.codePointAt(0) ?? 0 : 0,
-      bubbles: true,
-      cancelable: true
-    };
-    editor.dispatchEvent(new KeyboardEvent("keydown", eventInit));
-    editor.dispatchEvent(new KeyboardEvent("keypress", eventInit));
-    editor.dispatchEvent(new KeyboardEvent("keyup", eventInit));
-  };
-
-  const commitByArrowEnter = async (editor) => {
-    emitKey(editor, "ArrowDown", "ArrowDown", 40);
-    await sleep(120);
-    emitKey(editor, "Enter", "Enter", 13);
-    editor.dispatchEvent(new Event("change", { bubbles: true }));
-  };
-
-  const typeChar = (editor, char, code, keyCode) => {
-    emitKey(editor, char, code, keyCode);
-    appendText(editor, char);
-  };
-
   const insertText = (editor, text) => {
     clearEditorInputText(editor);
     appendText(editor, text);
-  };
-
-  const commitEditor = (editor) => {
-    const events = [
-      { key: "Enter", code: "Enter", keyCode: 13, which: 13 },
-      { key: "Tab", code: "Tab", keyCode: 9, which: 9 }
-    ];
-    events.forEach((eventInit) => {
-      editor.dispatchEvent(
-        new KeyboardEvent("keydown", { ...eventInit, bubbles: true, cancelable: true })
-      );
-      editor.dispatchEvent(
-        new KeyboardEvent("keyup", { ...eventInit, bubbles: true, cancelable: true })
-      );
-    });
-    editor.dispatchEvent(new Event("change", { bubbles: true }));
   };
 
   const waitForPillInsert = async (editor, beforeCount, input, timeoutMs = 2000) => {
@@ -1252,30 +1311,15 @@
     while (Date.now() - start < timeoutMs) {
       const currentCount = editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length;
       if (currentCount > beforeCount) return true;
-      if (!isEmailInput(input)) {
+      if (isEmailInput(input)) {
+        const emails = getEditorPillEmailKeys(editor);
+        if (emails.has(normalizedInput)) return true;
+      } else {
         const labels = getEditorPillLabels(editor);
         if (labels.has(normalizedInput)) return true;
       }
       await sleep(80);
     }
-    return false;
-  };
-
-  const attemptDirectEmailCommit = async (editor, email, beforeCount) => {
-    clearEditorInputText(editor);
-    appendText(editor, email);
-    await sleep(80);
-    typeChar(editor, ";", "Semicolon", 186);
-    await sleep(180);
-    commitEditor(editor);
-    editor.blur();
-    editor.dispatchEvent(new Event("focusout", { bubbles: true }));
-    const inserted = await waitForPillInsert(editor, beforeCount, email, 2500);
-    if (inserted) {
-      clearEditorInputText(editor);
-      return true;
-    }
-    // Leave the text so the user can manually resolve it if needed.
     return false;
   };
 
@@ -1290,41 +1334,30 @@
       return inserted;
     }
 
-    if (isEmailInput(name)) {
-      const inserted = await attemptDirectEmailCommit(editor, name, beforeCount);
-      if (inserted) return true;
-      await commitByArrowEnter(editor);
-      return await waitForPillInsert(editor, beforeCount, name, 2500);
-    }
-
-    clearEditor(editor);
+    clearEditorInputText(editor);
     await sleep(80);
     return false;
   };
 
   const resolveAttendeeInputs = (names, selfEmail) => {
     const entries = [];
+    const selfEmailKey = normalizeEmail(selfEmail || "");
+    const selfNames = selfEmailKey ? getNamesForEmail(selfEmailKey) : null;
     names.forEach((name) => {
       const nameKey = normalizeNameKey(name);
+      if (selfNames?.has(nameKey)) return;
       const email = getUniqueEmailForName(nameKey);
       if (email) {
+        const emailKey = normalizeEmail(email);
+        if (selfEmailKey && emailKey === selfEmailKey) return;
         entries.push({
           input: email,
           nameKey,
-          emailKey: normalizeEmail(email),
+          emailKey,
           source: "contact"
         });
-      } else {
-        entries.push({ input: name, nameKey, emailKey: "", source: "name" });
       }
     });
-
-    if (selfEmail) {
-      const emailKey = normalizeEmail(selfEmail);
-      const namesForEmail = getNamesForEmail(emailKey);
-      const nameKey = namesForEmail?.size === 1 ? [...namesForEmail][0] : "";
-      entries.push({ input: selfEmail, nameKey, emailKey, source: "self" });
-    }
 
     return entries;
   };
@@ -1358,15 +1391,15 @@
     if (editor.getAttribute(ATTENDEE_AUTOFILL_ATTR) === "true") return true;
     if (editor.getAttribute(ATTENDEE_AUTOFILLING_ATTR) === "true") return true;
     if (!state.contactsLoaded && chrome?.storage?.local) return true;
-    const hasPills =
-      editor.querySelectorAll("._EType_RECIPIENT_ENTITY").length > 0;
-    const hasText = !isEffectivelyEmpty(editor.textContent || "");
-    return hasText && !hasPills;
+    return !isBlankNewEventDraft(editor);
   };
 
   const buildAutofillEntries = (editor) => {
     const names = getSelectedCalendarNames();
-    const selfEmail = ensureSelfEmail(editor.ownerDocument);
+    const selfEmail = ensureSelfEmail(
+      editor.ownerDocument,
+      getComposeRootForEditor(editor)
+    );
     const entries = resolveAttendeeInputs(names, selfEmail);
     if (entries.length === 0) return null;
 
@@ -1386,28 +1419,32 @@
 
   const getAutofillEntryKey = (entry) => entry.emailKey || entry.nameKey || "";
 
-  const shouldSkipAutofillEntry = (entry, key, existing, seen) => {
+  const shouldSkipAutofillEntry = (entry, key, existing, existingEmails, seen) => {
     if (!key || wasRecentlyInserted(key) || seen.has(key)) return true;
     if (entry.nameKey && existing.has(entry.nameKey)) return true;
+    if (entry.emailKey && existingEmails.has(entry.emailKey)) return true;
     if (entry.emailKey && hasExistingForEmail(entry.emailKey, existing)) return true;
     return false;
   };
 
-  const applyAutofillEntry = async (editor, entry, key, existing) => {
+  const applyAutofillEntry = async (editor, entry, key, existing, existingEmails) => {
     const inserted = await addAttendeeByName(editor, entry.input);
     if (!inserted) return;
     markInserted(key);
     if (entry.nameKey) existing.add(entry.nameKey);
-    if (entry.emailKey) addExistingForEmail(entry.emailKey, existing);
+    if (entry.emailKey) {
+      addExistingForEmail(entry.emailKey, existing);
+      existingEmails.add(entry.emailKey);
+    }
   };
 
-  const applyAutofillEntries = async (editor, entries, existing) => {
+  const applyAutofillEntries = async (editor, entries, existing, existingEmails) => {
     const seen = new Set();
     for (const entry of entries) {
       const key = getAutofillEntryKey(entry);
-      if (shouldSkipAutofillEntry(entry, key, existing, seen)) continue;
+      if (shouldSkipAutofillEntry(entry, key, existing, existingEmails, seen)) continue;
       seen.add(key);
-      await applyAutofillEntry(editor, entry, key, existing);
+      await applyAutofillEntry(editor, entry, key, existing, existingEmails);
       await sleep(120);
     }
   };
@@ -1420,9 +1457,10 @@
     editor.setAttribute(ATTENDEE_AUTOFILL_ATTR, "true");
     editor.setAttribute(ATTENDEE_AUTOFILLING_ATTR, "true");
     const existing = getEditorPillLabels(editor);
+    const existingEmails = getEditorPillEmailKeys(editor);
 
     try {
-      await applyAutofillEntries(editor, entries, existing);
+      await applyAutofillEntries(editor, entries, existing, existingEmails);
     } finally {
       editor.removeAttribute(ATTENDEE_AUTOFILLING_ATTR);
     }
