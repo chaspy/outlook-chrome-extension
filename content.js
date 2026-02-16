@@ -24,7 +24,12 @@
     /^辞退:/
   ];
   const IGNORE_STATUS_PATTERNS = [/,\s*Free\b/i, /,\s*空き\b/, /,\s*空き時間\b/];
-  const ATTENDEE_PLACEHOLDERS = ["Invite attendees", "出席者を追加"];
+  const ATTENDEE_PLACEHOLDERS = [
+    "Invite attendees",
+    "Invite required attendees",
+    "出席者を追加",
+    "必須出席者を招待します"
+  ];
   const TITLE_PLACEHOLDERS = ["Add a title", "Add title", "タイトルを追加", "タイトルの追加"];
   const TITLE_ARIA_LABELS = ["Add details for the event", "タイトル"];
   const IGNORE_CALENDAR_NAMES = new Set(["Calendar", "Birthdays", "Japan holidays"]);
@@ -1073,21 +1078,43 @@
     return emails;
   };
 
-  const findSelfEmail = (doc) => {
-    const root = doc || document;
-    const nodes = [...root.querySelectorAll(".ms-Dropdown-title, .ms-Dropdown, [role=\"combobox\"]")];
-    for (const node of nodes) {
-      const text = node.textContent || "";
-      const match = text.match(EMAIL_PATTERN);
-      if (match) return match[0];
+  const extractFirstEmail = (text) => {
+    if (!text) return "";
+    const match = text.match(EMAIL_PATTERN);
+    return match ? match[0] : "";
+  };
+
+  const getSelfEmailCandidates = (root) => {
+    if (!root?.querySelectorAll) return [];
+    return [
+      ...root.querySelectorAll(".mDZXX, .fui-Dropdown__button, .ms-Dropdown-title, .ms-Dropdown")
+    ];
+  };
+
+  const findSelfEmail = (doc, preferredRoot) => {
+    const rootDoc = doc || document;
+    const roots = [preferredRoot, rootDoc].filter(Boolean);
+    for (const root of roots) {
+      const nodes = getSelfEmailCandidates(root);
+      for (const node of nodes) {
+        const fromAria = extractFirstEmail(node.getAttribute("aria-label") || "");
+        if (fromAria) return fromAria;
+        const fromText = extractFirstEmail(node.textContent || "");
+        if (fromText) return fromText;
+      }
     }
     return "";
   };
 
-  const ensureSelfEmail = (doc) => {
+  const ensureSelfEmail = (doc, preferredRoot) => {
+    const preferredEmail = findSelfEmail(doc, preferredRoot);
+    if (preferredEmail) {
+      state.selfEmail = preferredEmail;
+      return preferredEmail;
+    }
     if (state.selfEmail) return state.selfEmail;
-    const email = findSelfEmail(doc);
-    if (email) state.selfEmail = email;
+    const fallbackEmail = findSelfEmail(doc, doc?.body || document.body);
+    if (fallbackEmail) state.selfEmail = fallbackEmail;
     return state.selfEmail;
   };
 
@@ -1369,7 +1396,10 @@
 
   const buildAutofillEntries = (editor) => {
     const names = getSelectedCalendarNames();
-    const selfEmail = ensureSelfEmail(editor.ownerDocument);
+    const selfEmail = ensureSelfEmail(
+      editor.ownerDocument,
+      getComposeRootForEditor(editor)
+    );
     const entries = resolveAttendeeInputs(names, selfEmail);
     if (entries.length === 0) return null;
 
