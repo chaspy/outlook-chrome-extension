@@ -1,10 +1,12 @@
 {
   "name": "outlook-chrome-extension",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "scripts": {
+    "sync:version": "node scripts/sync-version.js",
     "lint": "eslint --rulesdir .eslint-rules \"**/*.js\"",
     "lint:webext": "node scripts/run-webext-lint.js",
+    "check:release-version": "node scripts/check-release-version.js --require-bump",
     "test:search": "node --test tests/search-filter.test.js",
     "test:coverage": "c8 --reporter=lcov --reporter=text node --test tests/search-filter.test.js"
   },

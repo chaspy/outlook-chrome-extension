@@ -207,3 +207,18 @@ npm run lint
 npm run lint:webext
 npm run test:search
 ```
+
+### Version management (single source of truth)
+
+`VERSION` is the canonical version value used for release tags.
+
+```bash
+# 1) update VERSION
+echo "0.2.3" > VERSION
+
+# 2) sync manifest/package/package-lock
+npm run sync:version
+
+# 3) validate for PR merge guard
+npm run check:release-version
+```
