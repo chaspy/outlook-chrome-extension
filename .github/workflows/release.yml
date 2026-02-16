@@ -26,10 +26,10 @@ jobs:
         id: meta
         run: |
           last_tag=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
-          version=$(node -p "require('./manifest.json').version || ''")
+          version=$(tr -d '[:space:]' < VERSION)
           version="${version#v}"
           if [ -z "$version" ]; then
-            echo "manifest.json version is empty" >&2
+            echo "VERSION is empty" >&2
             exit 1
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"

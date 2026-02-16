@@ -1,0 +1,16 @@
+name: Version Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  version_guard:
+    name: Validate Version Bump
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check version bump
+        run: node scripts/check-release-version.js --require-bump
