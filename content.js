@@ -32,7 +32,13 @@
   ];
   const TITLE_PLACEHOLDERS = ["Add a title", "Add title", "タイトルを追加", "タイトルの追加"];
   const TITLE_ARIA_LABELS = ["Add details for the event", "タイトル"];
-  const IGNORE_CALENDAR_NAMES = new Set(["Calendar", "Birthdays", "Japan holidays"]);
+  const IGNORE_CALENDAR_NAMES = new Set([
+    "Calendar",
+    "Birthdays",
+    "Japan holidays",
+    "予定表",
+    "カレンダー"
+  ]);
   const ATTENDEE_AUTOFILL_ATTR = "data-oce-attendees-filled";
   const ATTENDEE_AUTOFILLING_ATTR = "data-oce-attendees-filling";
   const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
