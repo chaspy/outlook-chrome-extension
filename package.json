@@ -8,9 +8,11 @@
     "lint:webext": "node scripts/run-webext-lint.js",
     "check:release-version": "node scripts/check-release-version.js --require-bump",
     "test:search": "node --test tests/search-filter.test.js",
-    "test:coverage": "c8 --reporter=lcov --reporter=text node --test tests/search-filter.test.js"
+    "test:coverage": "c8 --reporter=lcov --reporter=text node --test tests/search-filter.test.js",
+    "test:e2e": "npx playwright test --config e2e/playwright.config.js"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
     "c8": "^9.1.0",
     "eslint": "^8.57.0",
     "eslint-plugin-sonarjs": "^0.25.0",

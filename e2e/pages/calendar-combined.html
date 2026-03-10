@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Outlook Calendar Mock</title>
+  <style>
+    body { margin: 0; font-family: "Segoe UI", sans-serif; }
+    #innerRibbonContainer {
+      height: 48px;
+      background: #f3f2f1;
+      border-bottom: 1px solid #edebe9;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      position: relative;
+    }
+    .templateColumnContent {
+      position: relative;
+      width: 600px;
+      height: 400px;
+      margin: 16px;
+      border: 1px solid #edebe9;
+    }
+    /* Calendar events positioned absolutely to create overlaps */
+    [data-calitemid] {
+      position: absolute;
+      left: 10px;
+      width: 180px;
+      background: #deecf9;
+      border-left: 3px solid #0078d4;
+      padding: 4px 8px;
+      font-size: 12px;
+      box-sizing: border-box;
+    }
+    /* Event 1: 09:00-10:00 (overlaps with Event 2) */
+    [data-calitemid="evt-1"] {
+      top: 40px;
+      height: 80px;
+    }
+    /* Event 2: 09:30-10:30 (overlaps with Event 1) */
+    [data-calitemid="evt-2"] {
+      top: 70px;
+      height: 80px;
+      left: 100px;
+    }
+    /* Event 3: 12:00-13:00 (no overlap) */
+    [data-calitemid="evt-3"] {
+      top: 220px;
+      height: 80px;
+    }
+    /* Event 4: Cancelled event */
+    [data-calitemid="evt-4"] {
+      top: 40px;
+      height: 80px;
+      left: 300px;
+      opacity: 0.5;
+    }
+    /* Event 5: Free status event (overlaps with evt-1 in time but should be ignored) */
+    [data-calitemid="evt-5"] {
+      top: 40px;
+      height: 80px;
+      left: 400px;
+      opacity: 0.6;
+    }
+    /* Calendar list sidebar */
+    .calendar-sidebar {
+      width: 260px;
+      padding: 8px;
+      border-right: 1px solid #edebe9;
+      position: fixed;
+      right: 0;
+      top: 49px;
+      bottom: 0;
+      overflow-y: auto;
+    }
+    .calendar-sidebar ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .calendar-sidebar li {
+      margin-bottom: 4px;
+    }
+    .calendar-sidebar button[role="option"] {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 6px 8px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+      font-size: 13px;
+    }
+    .calendar-sidebar button[role="option"]:hover {
+      background: #f3f2f1;
+    }
+    .ATH58 { flex: 1; }
+    .GsziR { display: block; }
+  </style>
+</head>
+<body>
+
+  <!-- Ribbon container — anchor for the conflict detection button -->
+  <div id="innerRibbonContainer">
+    <span style="font-weight:600;">Outlook Calendar (Mock)</span>
+  </div>
+
+  <!-- Calendar event area -->
+  <div class="templateColumnContent">
+    <!-- Event 1: overlaps with Event 2 -->
+    <div data-calitemid="evt-1"
+         aria-label="Team Standup, 9:00 AM - 10:00 AM, Busy">
+      Team Standup
+    </div>
+
+    <!-- Event 2: overlaps with Event 1 -->
+    <div data-calitemid="evt-2"
+         aria-label="1on1 Meeting, 9:30 AM - 10:30 AM, Busy">
+      1on1 Meeting
+    </div>
+
+    <!-- Event 3: no overlap -->
+    <div data-calitemid="evt-3"
+         aria-label="Lunch Break, 12:00 PM - 1:00 PM, Busy">
+      Lunch Break
+    </div>
+
+    <!-- Event 4: cancelled — should be ignored by conflict detection -->
+    <div data-calitemid="evt-4"
+         aria-label="Canceled: Old Meeting, 9:00 AM - 10:00 AM, Busy">
+      Canceled: Old Meeting
+    </div>
+
+    <!-- Event 5: Free status — should be ignored by conflict detection -->
+    <div data-calitemid="evt-5"
+         aria-label="Focus Time, 9:00 AM - 10:00 AM, Free">
+      Focus Time
+    </div>
+  </div>
+
+  <!-- Calendar list sidebar -->
+  <div class="calendar-sidebar">
+    <ul>
+      <!-- Group 1 -->
+      <li aria-label="同僚の予定表">
+        <div class="GsziR">
+          <button role="option" aria-selected="true">
+            <span class="ATH58">田中太郎</span>
+          </button>
+        </div>
+        <div class="GsziR">
+          <button role="option" aria-selected="true">
+            <span class="ATH58">鈴木花子</span>
+          </button>
+        </div>
+        <div class="GsziR">
+          <button role="option" aria-selected="false">
+            <span class="ATH58">佐藤次郎</span>
+          </button>
+        </div>
+      </li>
+      <!-- Group 2 -->
+      <li aria-label="チームメンバー">
+        <div class="GsziR">
+          <button role="option" aria-selected="false">
+            <span class="ATH58">山田三郎</span>
+          </button>
+        </div>
+        <div class="GsziR">
+          <button role="option" aria-selected="true">
+            <span class="ATH58">高橋美咲</span>
+          </button>
+        </div>
+        <div class="GsziR">
+          <button role="option" aria-selected="false">
+            <span class="ATH58">渡辺健一</span>
+          </button>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+</body>
+</html>
