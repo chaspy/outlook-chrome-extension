@@ -77,6 +77,25 @@
   let pendingUpdate = false;
   let pendingSelectionUpdate = false;
 
+  const createCopyButton = (textToCopy, label) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "oce-copy-btn";
+    btn.title = `${label}をコピー`;
+    btn.innerHTML =
+      '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">' +
+      '<path d="M4 4v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2v2a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2zm2-2v2h2a2 2 0 0 1 2 2v2h2V2H6zM2 6v6h6V6H2z"/>' +
+      "</svg>";
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      globalThis.navigator.clipboard.writeText(textToCopy).then(() => {
+        showToast(`コピーしました: ${textToCopy}`);
+      });
+    });
+    return btn;
+  };
+
   const showToast = (message) => {
     const existing = document.getElementById(TOAST_ID);
     if (existing) existing.remove();
@@ -600,6 +619,11 @@
       nameText.textContent = name;
       nameRow.appendChild(nameText);
 
+      const nameActions = document.createElement("span");
+      nameActions.className = "oce-action-group";
+
+      nameActions.appendChild(createCopyButton(name, "名前"));
+
       const removeButton = document.createElement("button");
       removeButton.type = "button";
       removeButton.className = "oce-selected-remove";
@@ -611,14 +635,19 @@
           showToast("解除できませんでした");
         }
       });
-      nameRow.appendChild(removeButton);
+      nameActions.appendChild(removeButton);
+      nameRow.appendChild(nameActions);
 
       pill.appendChild(nameRow);
       if (email) {
+        const emailRow = document.createElement("div");
+        emailRow.className = "oce-selected-email-row";
         const emailSpan = document.createElement("span");
         emailSpan.className = "oce-selected-email";
         emailSpan.textContent = email;
-        pill.appendChild(emailSpan);
+        emailRow.appendChild(emailSpan);
+        emailRow.appendChild(createCopyButton(email, "メールアドレス"));
+        pill.appendChild(emailRow);
       }
       listEl.appendChild(pill);
     });
@@ -901,20 +930,30 @@
         const info = document.createElement("div");
         info.className = "oce-search-hints-info";
 
+        const nameRow = document.createElement("div");
+        nameRow.className = "oce-search-hints-name-row";
         const name = document.createElement("div");
         name.className = "oce-search-hints-name";
         name.textContent = entry.name;
-        info.appendChild(name);
+        nameRow.appendChild(name);
+        nameRow.appendChild(createCopyButton(entry.name, "名前"));
+        info.appendChild(nameRow);
 
         const emails = getEmailsForName(entry.nameKey);
         if (emails && emails.size > 0) {
+          const emailRow = document.createElement("div");
+          emailRow.className = "oce-search-hints-email-row";
           const email = document.createElement("div");
           email.className = "oce-search-hints-email";
           const list = [...emails];
           const preview = list.slice(0, 2).join(", ");
           email.textContent =
             list.length > 2 ? `${preview} 他${list.length - 2}件` : preview;
-          info.appendChild(email);
+          emailRow.appendChild(email);
+          if (list.length === 1) {
+            emailRow.appendChild(createCopyButton(list[0], "メールアドレス"));
+          }
+          info.appendChild(emailRow);
         }
 
         const ids = getIdsForName(entry.nameKey);
@@ -969,15 +1008,23 @@
         const info = document.createElement("div");
         info.className = "oce-search-hints-info";
 
+        const nameRow = document.createElement("div");
+        nameRow.className = "oce-search-hints-name-row";
         const name = document.createElement("div");
         name.className = "oce-search-hints-name";
         name.textContent = entry.name;
-        info.appendChild(name);
+        nameRow.appendChild(name);
+        nameRow.appendChild(createCopyButton(entry.name, "名前"));
+        info.appendChild(nameRow);
 
+        const emailRow = document.createElement("div");
+        emailRow.className = "oce-search-hints-email-row";
         const email = document.createElement("div");
         email.className = "oce-search-hints-email";
         email.textContent = entry.email;
-        info.appendChild(email);
+        emailRow.appendChild(email);
+        emailRow.appendChild(createCopyButton(entry.email, "メールアドレス"));
+        info.appendChild(emailRow);
 
         if (entry.id) {
           const id = document.createElement("div");

@@ -1,6 +1,6 @@
 {
   "name": "outlook-chrome-extension",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "sync:version": "node scripts/sync-version.js",
