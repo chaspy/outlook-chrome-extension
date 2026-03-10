@@ -866,6 +866,17 @@
     renderSelectedSummary();
   };
 
+  const createHintNameRow = (name) => {
+    const nameRow = document.createElement("div");
+    nameRow.className = "oce-search-hints-name-row";
+    const nameEl = document.createElement("div");
+    nameEl.className = "oce-search-hints-name";
+    nameEl.textContent = name;
+    nameRow.appendChild(nameEl);
+    nameRow.appendChild(createCopyButton(name, "名前"));
+    return nameRow;
+  };
+
   const renderSearchHints = (rawTerm) => {
     const hints = document.getElementById(SEARCH_HINTS_ID);
     if (!hints) return;
@@ -930,14 +941,7 @@
         const info = document.createElement("div");
         info.className = "oce-search-hints-info";
 
-        const nameRow = document.createElement("div");
-        nameRow.className = "oce-search-hints-name-row";
-        const name = document.createElement("div");
-        name.className = "oce-search-hints-name";
-        name.textContent = entry.name;
-        nameRow.appendChild(name);
-        nameRow.appendChild(createCopyButton(entry.name, "名前"));
-        info.appendChild(nameRow);
+        info.appendChild(createHintNameRow(entry.name));
 
         const emails = getEmailsForName(entry.nameKey);
         if (emails && emails.size > 0) {
@@ -1008,14 +1012,7 @@
         const info = document.createElement("div");
         info.className = "oce-search-hints-info";
 
-        const nameRow = document.createElement("div");
-        nameRow.className = "oce-search-hints-name-row";
-        const name = document.createElement("div");
-        name.className = "oce-search-hints-name";
-        name.textContent = entry.name;
-        nameRow.appendChild(name);
-        nameRow.appendChild(createCopyButton(entry.name, "名前"));
-        info.appendChild(nameRow);
+        info.appendChild(createHintNameRow(entry.name));
 
         const emailRow = document.createElement("div");
         emailRow.className = "oce-search-hints-email-row";
