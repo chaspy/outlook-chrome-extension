@@ -40,5 +40,12 @@ module.exports = {
     "unicorn/prefer-code-point": "error",
     "unicorn/prefer-dom-node-dataset": "error",
     "unicorn/prefer-string-replace-all": "error"
-  }
+  },
+  overrides: [
+    {
+      files: ["e2e/**/*.js"],
+      env: { node: true },
+      globals: { chrome: "readonly" }
+    }
+  ]
 };
