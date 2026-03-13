@@ -166,8 +166,8 @@
     const trimmed = timeStr.trim();
     const ampmMatch = trimmed.match(/^(\d{1,2}):(\d{2})\s*([AP]M)$/i);
     if (ampmMatch) {
-      let hours = parseInt(ampmMatch[1], 10);
-      const minutes = parseInt(ampmMatch[2], 10);
+      let hours = Number.parseInt(ampmMatch[1], 10);
+      const minutes = Number.parseInt(ampmMatch[2], 10);
       const period = ampmMatch[3].toUpperCase();
       if (period === "PM" && hours !== 12) hours += 12;
       if (period === "AM" && hours === 12) hours = 0;
@@ -175,7 +175,7 @@
     }
     const h24Match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
     if (h24Match) {
-      return parseInt(h24Match[1], 10) * 60 + parseInt(h24Match[2], 10);
+      return Number.parseInt(h24Match[1], 10) * 60 + Number.parseInt(h24Match[2], 10);
     }
     return null;
   };
@@ -194,12 +194,12 @@
     if (enMatch) {
       const month = MONTH_NAMES[enMatch[1].toLowerCase()];
       if (month !== undefined) {
-        return new Date(parseInt(enMatch[3], 10), month, parseInt(enMatch[2], 10));
+        return new Date(Number.parseInt(enMatch[3], 10), month, Number.parseInt(enMatch[2], 10));
       }
     }
     const jaMatch = label.match(DATE_PATTERNS_JA);
     if (jaMatch) {
-      return new Date(parseInt(jaMatch[1], 10), parseInt(jaMatch[2], 10) - 1, parseInt(jaMatch[3], 10));
+      return new Date(Number.parseInt(jaMatch[1], 10), Number.parseInt(jaMatch[2], 10) - 1, Number.parseInt(jaMatch[3], 10));
     }
     return null;
   };
@@ -337,7 +337,7 @@
 
   const formatWeekLabel = (weekKey) => {
     const parts = weekKey.split("-");
-    return `${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)}`;
+    return `${Number.parseInt(parts[1], 10)}/${Number.parseInt(parts[2], 10)}`;
   };
 
   const ensureTimeInsights = () => {
