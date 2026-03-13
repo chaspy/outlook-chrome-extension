@@ -260,32 +260,40 @@
     return `${y}-${m}-${d}`;
   };
 
+  const parseEventEntry = (el) => {
+    const label = getAriaLabel(el);
+    const timeRange = extractTimeRange(label);
+    if (!timeRange) return null;
+    const date = extractDate(label);
+    if (!date) return null;
+    const duration = getDurationHours(timeRange.startStr, timeRange.endStr);
+    if (duration <= 0) return null;
+    return { date, duration, recurring: isRecurringEvent(el) };
+  };
+
+  const addEventToWeek = (weeks, weekKey, duration, recurring) => {
+    if (!weeks[weekKey]) weeks[weekKey] = { total: 0, recurring: 0, oneTime: 0, count: 0 };
+    weeks[weekKey].total += duration;
+    weeks[weekKey].count += 1;
+    if (recurring) {
+      weeks[weekKey].recurring += duration;
+    } else {
+      weeks[weekKey].oneTime += duration;
+    }
+  };
+
   const collectMeetingData = () => {
     const events = collectEvents().filter(isMeetingForTimeCalc);
     const weeks = {};
     const seenIds = new Set();
     for (const el of events) {
-      const calItemId = el.getAttribute("data-calitemid");
+      const calItemId = el.dataset.calitemid;
       if (calItemId && seenIds.has(calItemId)) continue;
       if (calItemId) seenIds.add(calItemId);
-      const label = getAriaLabel(el);
-      const timeRange = extractTimeRange(label);
-      if (!timeRange) continue;
-      const date = extractDate(label);
-      if (!date) continue;
-      const duration = getDurationHours(timeRange.startStr, timeRange.endStr);
-      if (duration <= 0) continue;
-      const monday = getWeekMonday(date);
-      const weekKey = formatWeekKey(monday);
-      if (!weeks[weekKey]) weeks[weekKey] = { total: 0, recurring: 0, oneTime: 0, count: 0 };
-      const recurring = isRecurringEvent(el);
-      weeks[weekKey].total += duration;
-      weeks[weekKey].count += 1;
-      if (recurring) {
-        weeks[weekKey].recurring += duration;
-      } else {
-        weeks[weekKey].oneTime += duration;
-      }
+      const entry = parseEventEntry(el);
+      if (!entry) continue;
+      const weekKey = formatWeekKey(getWeekMonday(entry.date));
+      addEventToWeek(weeks, weekKey, entry.duration, entry.recurring);
     }
     for (const key of Object.keys(weeks)) {
       weeks[key].total = Math.round(weeks[key].total * 10) / 10;
@@ -394,7 +402,7 @@
       const week = data[key];
       const row = document.createElement("div");
       row.className = "oce-time-bar-row";
-      if (key === currentWeekKey) row.setAttribute("data-current", "true");
+      if (key === currentWeekKey) row.dataset.current = "true";
 
       const label = document.createElement("span");
       label.className = "oce-time-bar-label";
@@ -455,8 +463,8 @@
   const updateTimeInsights = () => {
     const events = collectEvents();
     const currentIds = events
-      .filter((el) => el.getAttribute("data-calitemid"))
-      .map((el) => el.getAttribute("data-calitemid"))
+      .filter((el) => el.dataset.calitemid)
+      .map((el) => el.dataset.calitemid)
       .sort()
       .join(",");
     if (currentIds === state.lastTimeItemIds && currentIds.length > 0) return;
