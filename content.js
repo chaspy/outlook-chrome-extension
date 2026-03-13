@@ -221,16 +221,8 @@
     return false;
   };
 
-  const isOwnCalendarEvent = (el) => {
-    const container = el.closest(".templateColumnContent");
-    if (!container) return false;
-    const allContainers = [...document.querySelectorAll(".templateColumnContent")];
-    return allContainers.length === 0 || container === allContainers[0];
-  };
-
   const isMeetingForTimeCalc = (el) => {
     if (isAllDayEvent(el)) return false;
-    if (!isOwnCalendarEvent(el)) return false;
     const label = getAriaLabel(el);
     if (!label) return false;
     if (IGNORE_LABEL_PATTERNS.some((p) => p.test(label))) return false;
