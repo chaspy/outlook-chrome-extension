@@ -8,6 +8,11 @@ const contactsClearButton = document.getElementById("contacts-clear");
 const contactsStatus = document.getElementById("contacts-status");
 const contactsCount = document.getElementById("contacts-count");
 const CONTACTS_STORAGE_KEY = "oceContacts";
+const EXCLUDE_KEYWORDS_KEY = "oceMeetingExcludeKeywords";
+const excludeInput = document.getElementById("exclude-keywords-input");
+const excludeSaveButton = document.getElementById("exclude-keywords-save");
+const excludeClearButton = document.getElementById("exclude-keywords-clear");
+const excludeStatus = document.getElementById("exclude-keywords-status");
 
 const setStatus = (text) => {
   statusEl.textContent = text;
@@ -278,5 +283,42 @@ contactsClearButton.addEventListener("click", () => {
   });
 });
 
+const loadExcludeKeywords = () => {
+  if (!chrome?.storage?.local) return;
+  chrome.storage.local.get(EXCLUDE_KEYWORDS_KEY, (result) => {
+    const keywords = result[EXCLUDE_KEYWORDS_KEY];
+    if (Array.isArray(keywords) && keywords.length > 0) {
+      excludeInput.value = keywords.join(", ");
+    }
+  });
+};
+
+excludeSaveButton.addEventListener("click", () => {
+  const text = excludeInput.value || "";
+  const keywords = text
+    .split(",")
+    .map((kw) => kw.trim())
+    .filter((kw) => kw.length > 0);
+  if (!chrome?.storage?.local) {
+    excludeStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.set({ [EXCLUDE_KEYWORDS_KEY]: keywords }, () => {
+    excludeStatus.textContent = `保存しました (${keywords.length}件)`;
+  });
+});
+
+excludeClearButton.addEventListener("click", () => {
+  excludeInput.value = "";
+  if (!chrome?.storage?.local) {
+    excludeStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.remove(EXCLUDE_KEYWORDS_KEY, () => {
+    excludeStatus.textContent = "クリアしました";
+  });
+});
+
 loadContactsCount();
+loadExcludeKeywords();
 void fetchDebugInfo();

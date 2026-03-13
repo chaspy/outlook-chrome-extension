@@ -50,7 +50,8 @@ button:disabled {
   margin-bottom: 6px;
 }
 
-textarea {
+textarea,
+input[type="text"] {
   width: 100%;
   box-sizing: border-box;
   border-radius: 8px;
@@ -60,4 +61,29 @@ textarea {
   font-size: 11px;
   line-height: 1.4;
   resize: vertical;
+}
+
+input[type="text"] {
+  resize: none;
+  margin-bottom: 8px;
+}
+
+.panel {
+  margin-bottom: 12px;
+}
+
+.panel h2 {
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+
+.panel p {
+  font-size: 11px;
+  color: #4a4a4a;
+  margin: 0 0 6px;
+}
+
+.count {
+  font-size: 11px;
+  color: #605e5c;
 }

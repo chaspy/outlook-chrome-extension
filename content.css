@@ -330,3 +330,105 @@
   align-items: center;
   gap: 4px;
 }
+
+#oce-time-insights {
+  padding: 8px;
+  background: #fff;
+  border-bottom: 1px solid #e5e5e5;
+  font-size: 12px;
+}
+
+.oce-time-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.oce-time-current {
+  font-size: 13px;
+  color: #0078d4;
+}
+
+.oce-time-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.oce-time-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.oce-time-bar-row[data-current="true"] {
+  font-weight: 600;
+}
+
+.oce-time-bar-row[data-current="true"] .oce-time-bar-track {
+  outline: 1.5px solid #0078d4;
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+.oce-time-bar-label {
+  min-width: 32px;
+  text-align: right;
+  color: #605e5c;
+}
+
+.oce-time-bar-track {
+  flex: 1;
+  height: 14px;
+  background: #f3f2f1;
+  border-radius: 3px;
+  overflow: hidden;
+  display: flex;
+}
+
+.oce-time-bar-recurring {
+  background: #0078d4;
+  height: 100%;
+}
+
+.oce-time-bar-onetime {
+  background: #a4ceeb;
+  height: 100%;
+}
+
+.oce-time-bar-hours {
+  min-width: 36px;
+  text-align: right;
+  color: #605e5c;
+}
+
+.oce-time-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: #605e5c;
+}
+
+.oce-time-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.oce-time-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.oce-time-legend-swatch.recurring {
+  background: #0078d4;
+}
+
+.oce-time-legend-swatch.onetime {
+  background: #a4ceeb;
+}

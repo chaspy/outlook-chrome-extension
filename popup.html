@@ -30,6 +30,22 @@
     </section>
 
     <section class="panel">
+      <h2>ミーティング時間: 除外キーワード</h2>
+      <p>カンマ区切りで入力。タイトルに含まれる予定を時間集計から除外します。</p>
+      <input
+        id="exclude-keywords-input"
+        type="text"
+        placeholder="例: おやすみ, Focus Time"
+        spellcheck="false"
+      />
+      <div class="actions">
+        <button id="exclude-keywords-save" type="button">保存</button>
+        <button id="exclude-keywords-clear" type="button">クリア</button>
+      </div>
+      <div class="status" id="exclude-keywords-status"></div>
+    </section>
+
+    <section class="panel">
       <h2>Debug</h2>
       <div class="actions">
         <button id="refresh" type="button">取得</button>
