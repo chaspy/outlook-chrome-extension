@@ -268,10 +268,6 @@
     if (rules.prefix.some((w) => title.startsWith(w.toLowerCase()))) return true;
     if (rules.suffix.some((w) => title.endsWith(w.toLowerCase()))) return true;
     if (rules.partial.some((w) => title.includes(w.toLowerCase()))) return true;
-    // Legacy: old-style keywords as partial match
-    if (state.meetingExcludeKeywords.length > 0) {
-      if (state.meetingExcludeKeywords.some((kw) => title.includes(kw.toLowerCase()))) return true;
-    }
     return false;
   };
 
@@ -461,11 +457,13 @@
       if (result[TIME_STORAGE_KEY]) {
         state.meetingTimeData = result[TIME_STORAGE_KEY];
       }
-      if (Array.isArray(result[EXCLUDE_KEYWORDS_KEY])) {
-        state.meetingExcludeKeywords = result[EXCLUDE_KEYWORDS_KEY];
-      }
       if (result[EXCLUDE_RULES_KEY]) {
         state.meetingExcludeRules = { exact: [], prefix: [], suffix: [], partial: [], ...result[EXCLUDE_RULES_KEY] };
+      } else if (Array.isArray(result[EXCLUDE_KEYWORDS_KEY]) && result[EXCLUDE_KEYWORDS_KEY].length > 0) {
+        // Migrate legacy keywords to partial match rules
+        state.meetingExcludeRules = { exact: [], prefix: [], suffix: [], partial: result[EXCLUDE_KEYWORDS_KEY] };
+        chrome.storage.local.set({ [EXCLUDE_RULES_KEY]: state.meetingExcludeRules });
+        chrome.storage.local.remove(EXCLUDE_KEYWORDS_KEY);
       }
       if (result[WORK_HOURS_KEY]) {
         state.meetingWorkStart = result[WORK_HOURS_KEY].start ?? DEFAULT_WORK_START;
@@ -486,11 +484,6 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
       let needsUpdate = false;
-      if (changes[EXCLUDE_KEYWORDS_KEY]) {
-        const newValue = changes[EXCLUDE_KEYWORDS_KEY].newValue;
-        state.meetingExcludeKeywords = Array.isArray(newValue) ? newValue : [];
-        needsUpdate = true;
-      }
       if (changes[EXCLUDE_RULES_KEY]) {
         const r = changes[EXCLUDE_RULES_KEY].newValue || {};
         state.meetingExcludeRules = { exact: [], prefix: [], suffix: [], partial: [], ...r };
