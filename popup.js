@@ -12,6 +12,14 @@ const EXCLUDE_KEYWORDS_KEY = "oceMeetingExcludeKeywords";
 const WORK_HOURS_KEY = "oceMeetingWorkHours";
 const ROOM_EMAIL_DOMAIN_KEY = "oceRoomEmailDomain";
 const COLOR_THRESHOLDS_KEY = "oceColorThresholds";
+const EXCLUDE_RULES_KEY = "oceMeetingExcludeRules";
+const excludeExactInput = document.getElementById("exclude-exact");
+const excludePrefixInput = document.getElementById("exclude-prefix");
+const excludeSuffixInput = document.getElementById("exclude-suffix");
+const excludePartialInput = document.getElementById("exclude-partial");
+const excludeRulesSaveButton = document.getElementById("exclude-rules-save");
+const excludeRulesClearButton = document.getElementById("exclude-rules-clear");
+const excludeRulesStatus = document.getElementById("exclude-rules-status");
 const thresholdLowInput = document.getElementById("threshold-low");
 const thresholdMidInput = document.getElementById("threshold-mid");
 const thresholdHighInput = document.getElementById("threshold-high");
@@ -338,6 +346,53 @@ excludeClearButton.addEventListener("click", () => {
   });
 });
 
+const parseCommaSeparated = (text) =>
+  (text || "").split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+
+const loadExcludeRules = () => {
+  if (!chrome?.storage?.local) return;
+  chrome.storage.local.get(EXCLUDE_RULES_KEY, (result) => {
+    const r = result[EXCLUDE_RULES_KEY];
+    if (r) {
+      excludeExactInput.value = (r.exact || []).join(", ");
+      excludePrefixInput.value = (r.prefix || []).join(", ");
+      excludeSuffixInput.value = (r.suffix || []).join(", ");
+      excludePartialInput.value = (r.partial || []).join(", ");
+    }
+  });
+};
+
+excludeRulesSaveButton.addEventListener("click", () => {
+  const rules = {
+    exact: parseCommaSeparated(excludeExactInput.value),
+    prefix: parseCommaSeparated(excludePrefixInput.value),
+    suffix: parseCommaSeparated(excludeSuffixInput.value),
+    partial: parseCommaSeparated(excludePartialInput.value)
+  };
+  const total = rules.exact.length + rules.prefix.length + rules.suffix.length + rules.partial.length;
+  if (!chrome?.storage?.local) {
+    excludeRulesStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.set({ [EXCLUDE_RULES_KEY]: rules }, () => {
+    excludeRulesStatus.textContent = `保存しました (${total}件)`;
+  });
+});
+
+excludeRulesClearButton.addEventListener("click", () => {
+  excludeExactInput.value = "";
+  excludePrefixInput.value = "";
+  excludeSuffixInput.value = "";
+  excludePartialInput.value = "";
+  if (!chrome?.storage?.local) {
+    excludeRulesStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.remove(EXCLUDE_RULES_KEY, () => {
+    excludeRulesStatus.textContent = "クリアしました";
+  });
+});
+
 const loadRoomEmailDomain = () => {
   if (!chrome?.storage?.local) return;
   chrome.storage.local.get(ROOM_EMAIL_DOMAIN_KEY, (result) => {
@@ -460,6 +515,7 @@ thresholdResetButton.addEventListener("click", () => {
 
 loadContactsCount();
 loadExcludeKeywords();
+loadExcludeRules();
 loadRoomEmailDomain();
 loadWorkHours();
 loadColorThresholds();

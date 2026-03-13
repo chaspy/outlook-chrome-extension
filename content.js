@@ -44,6 +44,7 @@
   const TIME_HIGHLIGHT_CLASS = "oce-time-counted";
   const TIME_STORAGE_KEY = "oceMeetingTime";
   const EXCLUDE_KEYWORDS_KEY = "oceMeetingExcludeKeywords";
+  const EXCLUDE_RULES_KEY = "oceMeetingExcludeRules";
   const WORK_HOURS_KEY = "oceMeetingWorkHours";
   const ROOM_EMAIL_DOMAIN_KEY = "oceRoomEmailDomain";
   const COLOR_THRESHOLDS_KEY = "oceColorThresholds";
@@ -114,6 +115,7 @@
     lastIgnoredError: "",
     meetingTimeData: {},
     meetingExcludeKeywords: [],
+    meetingExcludeRules: { exact: [], prefix: [], suffix: [], partial: [] },
     meetingWorkStart: DEFAULT_WORK_START,
     meetingWorkEnd: DEFAULT_WORK_END,
     lunchMinutes: DEFAULT_LUNCH_MINUTES,
@@ -257,6 +259,22 @@
     return false;
   };
 
+  const extractEventTitle = (label) => label.split("、")[0].trim();
+
+  const isExcludedByRules = (label) => {
+    const title = extractEventTitle(label).toLowerCase();
+    const rules = state.meetingExcludeRules;
+    if (rules.exact.some((w) => title === w.toLowerCase())) return true;
+    if (rules.prefix.some((w) => title.startsWith(w.toLowerCase()))) return true;
+    if (rules.suffix.some((w) => title.endsWith(w.toLowerCase()))) return true;
+    if (rules.partial.some((w) => title.includes(w.toLowerCase()))) return true;
+    // Legacy: old-style keywords as partial match
+    if (state.meetingExcludeKeywords.length > 0) {
+      if (state.meetingExcludeKeywords.some((kw) => title.includes(kw.toLowerCase()))) return true;
+    }
+    return false;
+  };
+
   const isMeetingForTimeCalc = (el) => {
     if (isAllDayEvent(el)) return false;
     const label = getAriaLabel(el);
@@ -264,10 +282,7 @@
     if (IGNORE_LABEL_PATTERNS.some((p) => p.test(label))) return false;
     const status = extractStatus(label);
     if (IGNORE_STATUS_FOR_TIME.some((p) => p.test(status))) return false;
-    if (state.meetingExcludeKeywords.length > 0) {
-      const lowerLabel = label.toLowerCase();
-      if (state.meetingExcludeKeywords.some((kw) => lowerLabel.includes(kw.toLowerCase()))) return false;
-    }
+    if (isExcludedByRules(label)) return false;
     if (!extractTimeRange(label)) return false;
     return true;
   };
@@ -442,12 +457,15 @@
 
   const loadMeetingTimeData = () => {
     if (!chrome?.storage?.local) return;
-    chrome.storage.local.get([TIME_STORAGE_KEY, EXCLUDE_KEYWORDS_KEY, WORK_HOURS_KEY, ROOM_EMAIL_DOMAIN_KEY, COLOR_THRESHOLDS_KEY], (result) => {
+    chrome.storage.local.get([TIME_STORAGE_KEY, EXCLUDE_KEYWORDS_KEY, EXCLUDE_RULES_KEY, WORK_HOURS_KEY, ROOM_EMAIL_DOMAIN_KEY, COLOR_THRESHOLDS_KEY], (result) => {
       if (result[TIME_STORAGE_KEY]) {
         state.meetingTimeData = result[TIME_STORAGE_KEY];
       }
       if (Array.isArray(result[EXCLUDE_KEYWORDS_KEY])) {
         state.meetingExcludeKeywords = result[EXCLUDE_KEYWORDS_KEY];
+      }
+      if (result[EXCLUDE_RULES_KEY]) {
+        state.meetingExcludeRules = { exact: [], prefix: [], suffix: [], partial: [], ...result[EXCLUDE_RULES_KEY] };
       }
       if (result[WORK_HOURS_KEY]) {
         state.meetingWorkStart = result[WORK_HOURS_KEY].start ?? DEFAULT_WORK_START;
@@ -471,6 +489,11 @@
       if (changes[EXCLUDE_KEYWORDS_KEY]) {
         const newValue = changes[EXCLUDE_KEYWORDS_KEY].newValue;
         state.meetingExcludeKeywords = Array.isArray(newValue) ? newValue : [];
+        needsUpdate = true;
+      }
+      if (changes[EXCLUDE_RULES_KEY]) {
+        const r = changes[EXCLUDE_RULES_KEY].newValue || {};
+        state.meetingExcludeRules = { exact: [], prefix: [], suffix: [], partial: [], ...r };
         needsUpdate = true;
       }
       if (changes[WORK_HOURS_KEY]) {
@@ -2290,7 +2313,7 @@
           if (!label) reason = "no-label";
           else if (IGNORE_LABEL_PATTERNS.some((p) => p.test(label))) reason = "cancelled/declined";
           else if (IGNORE_STATUS_FOR_TIME.some((p) => p.test(status))) reason = `status:${status}`;
-          else if (state.meetingExcludeKeywords.length > 0 && state.meetingExcludeKeywords.some((kw) => label.toLowerCase().includes(kw.toLowerCase()))) reason = "exclude-keyword";
+          else if (isExcludedByRules(label)) reason = "exclude-keyword";
           else if (!timeRange) reason = "no-time-range";
           else reason = "unknown";
           const childTitles = [...el.querySelectorAll("[title]")].slice(0, 3).map((c) => c.getAttribute("title").slice(0, 120));

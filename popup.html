@@ -30,19 +30,29 @@
     </section>
 
     <section class="panel">
-      <h2>ミーティング時間: 除外キーワード</h2>
-      <p>カンマ区切りで入力。タイトルに含まれる予定を時間集計から除外します。</p>
-      <input
-        id="exclude-keywords-input"
-        type="text"
-        placeholder="例: おやすみ, Focus Time"
-        spellcheck="false"
-      />
+      <h2>ミーティング時間: 除外ルール</h2>
+      <p>カンマ区切りで入力。予定タイトルに対してマッチした予定を時間集計から除外します。</p>
+      <label class="field-label">完全一致 <span class="field-hint">タイトルが完全に一致</span></label>
+      <input id="exclude-exact" type="text" placeholder="例: 移動, おやすみ" spellcheck="false" />
+      <label class="field-label">前方一致 <span class="field-hint">タイトルが指定文字列で始まる</span></label>
+      <input id="exclude-prefix" type="text" placeholder="例: オンライン_" spellcheck="false" />
+      <label class="field-label">後方一致 <span class="field-hint">タイトルが指定文字列で終わる</span></label>
+      <input id="exclude-suffix" type="text" placeholder="" spellcheck="false" />
+      <label class="field-label">部分一致 <span class="field-hint">タイトルに文字列を含む</span></label>
+      <input id="exclude-partial" type="text" placeholder="例: ブロック" spellcheck="false" />
       <div class="actions">
-        <button id="exclude-keywords-save" type="button">保存</button>
-        <button id="exclude-keywords-clear" type="button">クリア</button>
+        <button id="exclude-rules-save" type="button">保存</button>
+        <button id="exclude-rules-clear" type="button">クリア</button>
       </div>
-      <div class="status" id="exclude-keywords-status"></div>
+      <div class="status" id="exclude-rules-status"></div>
+    </section>
+
+    <!-- 旧キーワード設定（後方互換。新ルールに移行後は不要） -->
+    <section class="panel" style="display:none">
+      <input id="exclude-keywords-input" type="text" spellcheck="false" />
+      <button id="exclude-keywords-save" type="button">保存</button>
+      <button id="exclude-keywords-clear" type="button">クリア</button>
+      <div id="exclude-keywords-status"></div>
     </section>
 
     <!-- 会議室メールドメイン設定: DOM から出席者情報を取得できないため非表示 -->

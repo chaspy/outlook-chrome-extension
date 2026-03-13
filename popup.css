@@ -88,6 +88,19 @@ input[type="text"] {
   color: #605e5c;
 }
 
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 2px;
+  margin-top: 6px;
+}
+
+.field-hint {
+  font-weight: 400;
+  color: #8a8886;
+}
+
 .inline-fields {
   display: flex;
   align-items: center;
