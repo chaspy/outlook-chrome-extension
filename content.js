@@ -359,7 +359,7 @@
     const sorted = intervals.map(([s, e]) => [s, e]).sort((a, b) => a[0] - b[0]);
     const merged = [[sorted[0][0], sorted[0][1]]];
     for (let i = 1; i < sorted.length; i += 1) {
-      const last = merged[merged.length - 1];
+      const last = merged.at(-1);
       if (sorted[i][0] < last[1]) {
         last[1] = Math.max(last[1], sorted[i][1]);
       } else {
@@ -2134,6 +2134,93 @@
     });
   };
 
+  const buildTimeInsightsDebug = () => {
+    const allEvents = collectEvents();
+    const meetingEvents = allEvents.filter(isMeetingForTimeCalc);
+    const counted = meetingEvents.map((el) => {
+      const label = getAriaLabel(el);
+      const timeRange = extractTimeRange(label);
+      const date = extractDate(label);
+      const duration = timeRange ? getDurationHours(timeRange.startStr, timeRange.endStr) : 0;
+      return {
+        title: label.split("、")[0].slice(0, 80),
+        time: timeRange ? `${timeRange.startStr}-${timeRange.endStr}` : "",
+        date: date ? formatWeekKey(date) : "",
+        duration,
+        status: extractStatus(label),
+        recurring: isRecurringEvent(el)
+      };
+    });
+    const allDayEvents = allEvents.filter(isAllDayEvent);
+    const formatDateFromLabel = (label) => {
+      const d = extractDate(label);
+      return d ? formatWeekKey(d) : "";
+    };
+    const formatAttrs = (el) => [...el.attributes].map((a) => `${a.name}=${a.value.slice(0, 60)}`);
+    const allDaySamples = allDayEvents.slice(0, 5).map((el) => {
+      const label = getAriaLabel(el);
+      const childTitle = el.querySelector("[title]");
+      const parentLabel = el.parentElement ? (el.parentElement.getAttribute("aria-label") || "") : "";
+      return {
+        ariaLabel: label.slice(0, 120),
+        parentAriaLabel: parentLabel.slice(0, 120),
+        innerText: (el.innerText || "").slice(0, 120),
+        childTitle: childTitle ? childTitle.getAttribute("title").slice(0, 120) : "",
+        attrs: formatAttrs(el),
+        status: extractStatus(label),
+        date: formatDateFromLabel(label),
+        isOof: isOofDay(label)
+      };
+    });
+    const nonMeetingEvents = allEvents.filter((el) => !isAllDayEvent(el) && !isMeetingForTimeCalc(el));
+    const excludedEvents = nonMeetingEvents.slice(0, 20).map((el) => {
+      const label = getAriaLabel(el);
+      const status = extractStatus(label);
+      const timeRange = extractTimeRange(label);
+      let reason = "";
+      if (!label) reason = "no-label";
+      else if (IGNORE_LABEL_PATTERNS.some((p) => p.test(label))) reason = "cancelled/declined";
+      else if (IGNORE_STATUS_FOR_TIME.some((p) => p.test(status))) reason = `status:${status}`;
+      else if (isExcludedByRules(label)) reason = "exclude-keyword";
+      else if (timeRange) reason = "unknown";
+      else reason = "no-time-range";
+      const childTitles = [...el.querySelectorAll("[title]")].slice(0, 3).map((c) => c.getAttribute("title").slice(0, 120));
+      const hasAriaLabelChild = !!el.querySelector("[aria-label]");
+      return {
+        title: (label || (el.innerText || "")).split(/[、\n]/)[0].slice(0, 80),
+        ariaLabel: label.slice(0, 200),
+        hasAriaLabelChild,
+        childTitles,
+        innerText: (el.innerText || "").slice(0, 120),
+        status,
+        reason
+      };
+    });
+    const formatChildren = (el) => [...el.children].map((c) => ({
+      tag: c.tagName,
+      className: (c.className || "").slice(0, 60),
+      text: (c.textContent || "").slice(0, 80),
+      title: c.getAttribute("title") || ""
+    }));
+    const eventDomSamples = meetingEvents.slice(0, 5).map((el) => ({
+      ariaLabel: (el.getAttribute("aria-label") || "").slice(0, 120),
+      attrs: formatAttrs(el),
+      innerText: (el.innerText || "").slice(0, 120),
+      childCount: el.children.length,
+      children: formatChildren(el).slice(0, 5)
+    }));
+    return {
+      totalEvents: allEvents.length,
+      meetingEvents: meetingEvents.length,
+      storedData: state.meetingTimeData,
+      roomEmailDomain: state.roomEmailDomain,
+      countedEvents: counted,
+      allDayEvents: allDaySamples,
+      excludedEvents,
+      eventDomSamples
+    };
+  };
+
   const collectDebugInfo = () => {
     const docs = collectDocuments(document);
     const contentEditableTotal = docs.reduce(
@@ -2264,90 +2351,7 @@
       iframeCount: iframes.length,
       iframes,
       userAgent: navigator.userAgent,
-      timeInsights: (() => {
-        const allEvents = collectEvents();
-        const meetingEvents = allEvents.filter(isMeetingForTimeCalc);
-        const counted = meetingEvents.map((el) => {
-          const label = getAriaLabel(el);
-          const timeRange = extractTimeRange(label);
-          const date = extractDate(label);
-          const duration = timeRange ? getDurationHours(timeRange.startStr, timeRange.endStr) : 0;
-          return {
-            title: label.split("、")[0].slice(0, 80),
-            time: timeRange ? `${timeRange.startStr}-${timeRange.endStr}` : "",
-            date: date ? formatWeekKey(date) : "",
-            duration,
-            status: extractStatus(label),
-            recurring: isRecurringEvent(el)
-          };
-        });
-        const allDayEvents = allEvents.filter(isAllDayEvent);
-        const allDaySamples = allDayEvents.slice(0, 5).map((el) => {
-          const label = getAriaLabel(el);
-          const childTitle = el.querySelector("[title]");
-          const parentLabel = el.parentElement ? (el.parentElement.getAttribute("aria-label") || "") : "";
-          return {
-            ariaLabel: label.slice(0, 120),
-            parentAriaLabel: parentLabel.slice(0, 120),
-            innerText: (el.innerText || "").slice(0, 120),
-            childTitle: childTitle ? childTitle.getAttribute("title").slice(0, 120) : "",
-            attrs: [...el.attributes].map((a) => `${a.name}=${a.value.slice(0, 60)}`),
-            status: extractStatus(label),
-            date: (() => { const d = extractDate(label); return d ? formatWeekKey(d) : ""; })(),
-            isOof: isOofDay(label)
-          };
-        });
-        const nonMeetingEvents = allEvents.filter((el) => !isAllDayEvent(el) && !isMeetingForTimeCalc(el));
-        const excludedEvents = nonMeetingEvents.slice(0, 20).map((el) => {
-          const label = getAriaLabel(el);
-          const status = extractStatus(label);
-          const timeRange = extractTimeRange(label);
-          let reason = "";
-          if (!label) reason = "no-label";
-          else if (IGNORE_LABEL_PATTERNS.some((p) => p.test(label))) reason = "cancelled/declined";
-          else if (IGNORE_STATUS_FOR_TIME.some((p) => p.test(status))) reason = `status:${status}`;
-          else if (isExcludedByRules(label)) reason = "exclude-keyword";
-          else if (!timeRange) reason = "no-time-range";
-          else reason = "unknown";
-          const childTitles = [...el.querySelectorAll("[title]")].slice(0, 3).map((c) => c.getAttribute("title").slice(0, 120));
-          const hasAriaLabelChild = !!el.querySelector("[aria-label]");
-          return {
-            title: (label || (el.innerText || "")).split(/[、\n]/)[0].slice(0, 80),
-            ariaLabel: label.slice(0, 200),
-            hasAriaLabelChild,
-            childTitles,
-            innerText: (el.innerText || "").slice(0, 120),
-            status,
-            reason
-          };
-        });
-        const eventDomSamples = meetingEvents.slice(0, 5).map((el) => {
-          const attrs = [...el.attributes].map((a) => `${a.name}=${a.value.slice(0, 60)}`);
-          const children = [...el.children].map((c) => ({
-            tag: c.tagName,
-            className: (c.className || "").slice(0, 60),
-            text: (c.textContent || "").slice(0, 80),
-            title: c.getAttribute("title") || ""
-          }));
-          return {
-            ariaLabel: (el.getAttribute("aria-label") || "").slice(0, 120),
-            attrs,
-            innerText: (el.innerText || "").slice(0, 120),
-            childCount: el.children.length,
-            children: children.slice(0, 5)
-          };
-        });
-        return {
-          totalEvents: allEvents.length,
-          meetingEvents: meetingEvents.length,
-          storedData: state.meetingTimeData,
-          roomEmailDomain: state.roomEmailDomain,
-          countedEvents: counted,
-          allDayEvents: allDaySamples,
-          excludedEvents,
-          eventDomSamples
-        };
-      })()
+      timeInsights: buildTimeInsightsDebug()
     };
   };
 
