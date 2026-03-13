@@ -21,7 +21,8 @@
     /^Declined:/i,
     /^キャンセル済み:/,
     /^キャンセルイベント/,
-    /^辞退:/
+    /^辞退:/,
+    /^予定のキャンセル:/
   ];
   const IGNORE_STATUS_PATTERNS = [/,\s*Free\b/i, /,\s*空き\b/, /,\s*空き時間\b/];
   const ATTENDEE_PLACEHOLDERS = [
@@ -39,6 +40,48 @@
     "予定表",
     "カレンダー"
   ]);
+  const TIME_INSIGHTS_ID = "oce-time-insights";
+  const TIME_HIGHLIGHT_CLASS = "oce-time-counted";
+  const TIME_STORAGE_KEY = "oceMeetingTime";
+  const EXCLUDE_KEYWORDS_KEY = "oceMeetingExcludeKeywords";
+  const EXCLUDE_RULES_KEY = "oceMeetingExcludeRules";
+  const WORK_HOURS_KEY = "oceMeetingWorkHours";
+  const ROOM_EMAIL_DOMAIN_KEY = "oceRoomEmailDomain";
+  const COLOR_THRESHOLDS_KEY = "oceColorThresholds";
+  const DEFAULT_THRESHOLDS = { low: 50, mid: 70, high: 90 };
+  const DEFAULT_WORK_START = 9;
+  const DEFAULT_WORK_END = 18;
+  const DEFAULT_LUNCH_MINUTES = 60;
+  const IGNORE_STATUS_FOR_TIME = [
+    /\bFree\b/i, /\b空き\b/, /\b空き時間\b/,
+    /\bOut of Office\b/i, /\bOOF\b/, /\b外出中\b/
+  ];
+  const TIME_RANGE_PATTERNS = [
+    /(\d{1,2}:\d{2}\s*[AP]M)\s+to\s+(\d{1,2}:\d{2}\s*[AP]M)/i,
+    /(\d{1,2}:\d{2})\s*(?:から|[〜~\-–])\s*(\d{1,2}:\d{2})/,
+    /(\d{1,2}:\d{2}\s*[AP]M)\s*[〜~\-–]\s*(\d{1,2}:\d{2}\s*[AP]M)/i
+  ];
+  const DATE_PATTERNS_EN = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\b/i;
+  const DATE_PATTERNS_JA = /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/;
+  // Outlook statuses:
+  //   Busy (取り込み中/予定あり) - confirmed, time blocked
+  //   Free (空き時間/空き) - available, not blocked
+  //   Tentative (仮の予定) - not yet confirmed
+  //   Working Elsewhere (他の場所で仕事中/他の場所で作業) - remote/offsite
+  //   Out of Office / OOF (外出中) - away, vacation
+  const KNOWN_STATUSES = new Set([
+    "Busy", "Free", "Tentative", "Out of Office", "OOF", "Working Elsewhere",
+    "予定あり", "取り込み中", "空き", "空き時間", "仮の予定",
+    "外出中", "他の場所で仕事中", "他の場所で作業"
+  ]);
+  const WORK_DAYS_PER_WEEK = 5;
+  const MONTH_NAMES = {
+    january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+    july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
+  };
+  const WEEKS_BEFORE_CURRENT = 2;
+  const WEEKS_AFTER_CURRENT = 2;
+
   const ATTENDEE_AUTOFILL_ATTR = "data-oce-attendees-filled";
   const ATTENDEE_AUTOFILLING_ATTR = "data-oce-attendees-filling";
   const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
@@ -69,7 +112,18 @@
     showAllClicked: false,
     showAllAttemptedAt: 0,
     ignoredErrors: 0,
-    lastIgnoredError: ""
+    lastIgnoredError: "",
+    meetingTimeData: {},
+    meetingExcludeKeywords: [],
+    meetingExcludeRules: { exact: [], prefix: [], suffix: [], partial: [] },
+    meetingWorkStart: DEFAULT_WORK_START,
+    meetingWorkEnd: DEFAULT_WORK_END,
+    lunchMinutes: DEFAULT_LUNCH_MINUTES,
+    roomEmailDomain: "",
+    colorThresholds: { ...DEFAULT_THRESHOLDS },
+    timeHighlightActive: false,
+    highlightWeekKey: "",
+    lastTimeItemIds: ""
   };
 
   let selectionObserver = null;
@@ -129,6 +183,560 @@
       IGNORE_LABEL_PATTERNS.some((pattern) => pattern.test(label)) ||
       IGNORE_STATUS_PATTERNS.some((pattern) => pattern.test(label))
     );
+  };
+
+  const extractTimeRange = (label) => {
+    for (const pattern of TIME_RANGE_PATTERNS) {
+      const match = label.match(pattern);
+      if (match) return { startStr: match[1], endStr: match[2] };
+    }
+    return null;
+  };
+
+  const parseTimeToMinutes = (timeStr) => {
+    const trimmed = timeStr.trim();
+    const ampmMatch = trimmed.match(/^(\d{1,2}):(\d{2})\s*([AP]M)$/i);
+    if (ampmMatch) {
+      let hours = Number.parseInt(ampmMatch[1], 10);
+      const minutes = Number.parseInt(ampmMatch[2], 10);
+      const period = ampmMatch[3].toUpperCase();
+      if (period === "PM" && hours !== 12) hours += 12;
+      if (period === "AM" && hours === 12) hours = 0;
+      return hours * 60 + minutes;
+    }
+    const h24Match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+    if (h24Match) {
+      return Number.parseInt(h24Match[1], 10) * 60 + Number.parseInt(h24Match[2], 10);
+    }
+    return null;
+  };
+
+  const getDurationHours = (startStr, endStr) => {
+    const startMin = parseTimeToMinutes(startStr);
+    const endMin = parseTimeToMinutes(endStr);
+    if (startMin === null || endMin === null) return 0;
+    const workStartMin = state.meetingWorkStart * 60;
+    const workEndMin = state.meetingWorkEnd * 60;
+    const clampedStart = Math.max(startMin, workStartMin);
+    const clampedEnd = Math.min(endMin, workEndMin);
+    const diff = clampedEnd - clampedStart;
+    if (diff <= 0) return 0;
+    return diff / 60;
+  };
+
+  const extractDate = (label) => {
+    const enMatch = label.match(DATE_PATTERNS_EN);
+    if (enMatch) {
+      const month = MONTH_NAMES[enMatch[1].toLowerCase()];
+      if (month !== undefined) {
+        return new Date(Number.parseInt(enMatch[3], 10), month, Number.parseInt(enMatch[2], 10));
+      }
+    }
+    const jaMatch = label.match(DATE_PATTERNS_JA);
+    if (jaMatch) {
+      return new Date(Number.parseInt(jaMatch[1], 10), Number.parseInt(jaMatch[2], 10) - 1, Number.parseInt(jaMatch[3], 10));
+    }
+    return null;
+  };
+
+  const extractStatus = (label) => {
+    const segments = label.split(",").map((s) => s.trim());
+    for (let i = segments.length - 1; i >= 0; i -= 1) {
+      if (KNOWN_STATUSES.has(segments[i])) return segments[i];
+    }
+    return segments.length > 0 ? segments.at(-1) : "";
+  };
+
+  const isAllDayEvent = (el) => !el.closest(".templateColumnContent");
+
+  const isRecurringEvent = (el) => {
+    const icons = el.querySelectorAll("i, span.ms-Icon, [class*='icon']");
+    for (const icon of icons) {
+      const cls = icon.className || "";
+      const title = icon.getAttribute("title") || "";
+      if (/recur|repeat/i.test(cls) || /recur|repeat|繰り返し|定期/i.test(title)) return true;
+    }
+    return false;
+  };
+
+  const extractEventTitle = (label) => label.split("、")[0].trim();
+
+  const isExcludedByRules = (label) => {
+    const title = extractEventTitle(label).toLowerCase();
+    const rules = state.meetingExcludeRules;
+    if (rules.exact.some((w) => title === w.toLowerCase())) return true;
+    if (rules.prefix.some((w) => title.startsWith(w.toLowerCase()))) return true;
+    if (rules.suffix.some((w) => title.endsWith(w.toLowerCase()))) return true;
+    if (rules.partial.some((w) => title.includes(w.toLowerCase()))) return true;
+    return false;
+  };
+
+  const isMeetingForTimeCalc = (el) => {
+    if (isAllDayEvent(el)) return false;
+    const label = getAriaLabel(el);
+    if (!label) return false;
+    if (IGNORE_LABEL_PATTERNS.some((p) => p.test(label))) return false;
+    const status = extractStatus(label);
+    if (IGNORE_STATUS_FOR_TIME.some((p) => p.test(status))) return false;
+    if (isExcludedByRules(label)) return false;
+    if (!extractTimeRange(label)) return false;
+    return true;
+  };
+
+  const getWeekMonday = (date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const formatWeekKey = (monday) => {
+    const y = monday.getFullYear();
+    const m = String(monday.getMonth() + 1).padStart(2, "0");
+    const d = String(monday.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  };
+
+  const parseEventEntry = (el) => {
+    const label = getAriaLabel(el);
+    const timeRange = extractTimeRange(label);
+    if (!timeRange) return null;
+    const date = extractDate(label);
+    if (!date) return null;
+    const startMin = parseTimeToMinutes(timeRange.startStr);
+    const endMin = parseTimeToMinutes(timeRange.endStr);
+    if (startMin === null || endMin === null) return null;
+    const workStartMin = state.meetingWorkStart * 60;
+    const workEndMin = state.meetingWorkEnd * 60;
+    const clampedStart = Math.max(startMin, workStartMin);
+    const clampedEnd = Math.min(endMin, workEndMin);
+    if (clampedEnd <= clampedStart) return null;
+    return { date, start: clampedStart, end: clampedEnd, recurring: isRecurringEvent(el) };
+  };
+
+  const OOF_STATUS_PATTERNS = [/\bOut of Office\b/i, /\bOOF\b/, /\b外出中\b/];
+  // All-day events with these titles are treated as OOF regardless of status
+  // (e.g. "Japan holidays" calendar events default to Busy)
+  const HOLIDAY_TITLE_PATTERNS = [/^祝日$/, /^Holiday$/i];
+
+  const isOofStatus = (status) => OOF_STATUS_PATTERNS.some((p) => p.test(status));
+
+  const extractAllDayTitle = (label) => label.split("、")[0].trim();
+
+  const isHolidayTitle = (label) => {
+    const title = extractAllDayTitle(label);
+    return HOLIDAY_TITLE_PATTERNS.some((p) => p.test(title));
+  };
+
+  const isOofDay = (label) => isOofStatus(extractStatus(label)) || isHolidayTitle(label);
+
+  const collectOofDays = () => {
+    const allEvents = collectEvents();
+    const oofByWeek = {};
+    for (const el of allEvents) {
+      if (!isAllDayEvent(el)) continue;
+      const label = getAriaLabel(el);
+      if (!isOofDay(label)) continue;
+      const date = extractDate(label);
+      if (!date) continue;
+      const day = date.getDay();
+      if (day === 0 || day === 6) continue;
+      const weekKey = formatWeekKey(getWeekMonday(date));
+      if (!oofByWeek[weekKey]) oofByWeek[weekKey] = new Set();
+      oofByWeek[weekKey].add(formatWeekKey(date));
+    }
+    const result = {};
+    for (const [weekKey, dates] of Object.entries(oofByWeek)) {
+      result[weekKey] = dates.size;
+    }
+    return result;
+  };
+
+  const mergeTimeIntervals = (intervals) => {
+    if (intervals.length === 0) return [];
+    const sorted = intervals.map(([s, e]) => [s, e]).sort((a, b) => a[0] - b[0]);
+    const merged = [[sorted[0][0], sorted[0][1]]];
+    for (let i = 1; i < sorted.length; i += 1) {
+      const last = merged.at(-1);
+      if (sorted[i][0] < last[1]) {
+        last[1] = Math.max(last[1], sorted[i][1]);
+      } else {
+        merged.push([sorted[i][0], sorted[i][1]]);
+      }
+    }
+    return merged;
+  };
+
+  const collectDayIntervals = (events) => {
+    const seenIds = new Set();
+    const dayIntervals = {};
+    for (const el of events) {
+      const calItemId = el.dataset.calitemid;
+      if (calItemId && seenIds.has(calItemId)) continue;
+      if (calItemId) seenIds.add(calItemId);
+      const entry = parseEventEntry(el);
+      if (!entry) continue;
+      const dateKey = formatWeekKey(entry.date);
+      if (!dayIntervals[dateKey]) dayIntervals[dateKey] = [];
+      dayIntervals[dateKey].push({ start: entry.start, end: entry.end, recurring: entry.recurring });
+    }
+    return dayIntervals;
+  };
+
+  const aggregateDayToWeeks = (dayIntervals) => {
+    const weeks = {};
+    for (const [dateKey, intervals] of Object.entries(dayIntervals)) {
+      const date = new Date(dateKey);
+      const weekKey = formatWeekKey(getWeekMonday(date));
+
+      const merged = mergeTimeIntervals(intervals.map((i) => [i.start, i.end]));
+      const total = merged.reduce((sum, [s, e]) => sum + (e - s), 0) / 60;
+
+      const rawRecurring = intervals.filter((i) => i.recurring).reduce((sum, i) => sum + (i.end - i.start), 0) / 60;
+      const rawOneTime = intervals.filter((i) => !i.recurring).reduce((sum, i) => sum + (i.end - i.start), 0) / 60;
+      const rawTotal = rawRecurring + rawOneTime;
+      const scale = rawTotal > 0 ? total / rawTotal : 0;
+
+      if (!weeks[weekKey]) weeks[weekKey] = { total: 0, recurring: 0, oneTime: 0, count: 0, oofDays: 0 };
+      weeks[weekKey].total += total;
+      weeks[weekKey].recurring += rawRecurring * scale;
+      weeks[weekKey].oneTime += rawOneTime * scale;
+      weeks[weekKey].count += intervals.length;
+    }
+    return weeks;
+  };
+
+  const collectMeetingData = () => {
+    const events = collectEvents().filter(isMeetingForTimeCalc);
+    const dayIntervals = collectDayIntervals(events);
+    const weeks = aggregateDayToWeeks(dayIntervals);
+
+    const oofDays = collectOofDays();
+    for (const key of Object.keys(weeks)) {
+      weeks[key].total = Math.round(weeks[key].total * 10) / 10;
+      weeks[key].recurring = Math.round(weeks[key].recurring * 10) / 10;
+      weeks[key].oneTime = Math.round(weeks[key].oneTime * 10) / 10;
+      weeks[key].oofDays = oofDays[key] || 0;
+    }
+    return weeks;
+  };
+
+  const saveMeetingTimeData = (newWeekData) => {
+    const merged = { ...state.meetingTimeData };
+    for (const [key, value] of Object.entries(newWeekData)) {
+      merged[key] = value;
+    }
+    const currentMonday = getWeekMonday(new Date());
+    const minDate = new Date(currentMonday);
+    minDate.setDate(minDate.getDate() - WEEKS_BEFORE_CURRENT * 7);
+    const maxDate = new Date(currentMonday);
+    maxDate.setDate(maxDate.getDate() + WEEKS_AFTER_CURRENT * 7);
+    const minKey = formatWeekKey(minDate);
+    const maxKey = formatWeekKey(maxDate);
+    const pruned = {};
+    for (const key of Object.keys(merged)) {
+      if (key >= minKey && key <= maxKey) {
+        pruned[key] = merged[key];
+      }
+    }
+    state.meetingTimeData = pruned;
+    if (chrome?.storage?.local) {
+      chrome.storage.local.set({ [TIME_STORAGE_KEY]: pruned });
+    }
+  };
+
+  const clearMeetingTimeCache = () => {
+    state.lastTimeItemIds = "";
+  };
+
+  const loadMeetingTimeData = () => {
+    if (!chrome?.storage?.local) return;
+    chrome.storage.local.get([TIME_STORAGE_KEY, EXCLUDE_KEYWORDS_KEY, EXCLUDE_RULES_KEY, WORK_HOURS_KEY, ROOM_EMAIL_DOMAIN_KEY, COLOR_THRESHOLDS_KEY], (result) => {
+      if (result[TIME_STORAGE_KEY]) {
+        state.meetingTimeData = result[TIME_STORAGE_KEY];
+      }
+      if (result[EXCLUDE_RULES_KEY]) {
+        state.meetingExcludeRules = { exact: [], prefix: [], suffix: [], partial: [], ...result[EXCLUDE_RULES_KEY] };
+      } else if (Array.isArray(result[EXCLUDE_KEYWORDS_KEY]) && result[EXCLUDE_KEYWORDS_KEY].length > 0) {
+        // Migrate legacy keywords to partial match rules
+        state.meetingExcludeRules = { exact: [], prefix: [], suffix: [], partial: result[EXCLUDE_KEYWORDS_KEY] };
+        chrome.storage.local.set({ [EXCLUDE_RULES_KEY]: state.meetingExcludeRules });
+        chrome.storage.local.remove(EXCLUDE_KEYWORDS_KEY);
+      }
+      if (result[WORK_HOURS_KEY]) {
+        state.meetingWorkStart = result[WORK_HOURS_KEY].start ?? DEFAULT_WORK_START;
+        state.meetingWorkEnd = result[WORK_HOURS_KEY].end ?? DEFAULT_WORK_END;
+        state.lunchMinutes = result[WORK_HOURS_KEY].lunch ?? DEFAULT_LUNCH_MINUTES;
+      }
+      if (result[ROOM_EMAIL_DOMAIN_KEY]) {
+        state.roomEmailDomain = result[ROOM_EMAIL_DOMAIN_KEY];
+      }
+      if (result[COLOR_THRESHOLDS_KEY]) {
+        state.colorThresholds = { ...DEFAULT_THRESHOLDS, ...result[COLOR_THRESHOLDS_KEY] };
+      }
+    });
+  };
+
+  const watchTimeSettings = () => {
+    if (!chrome?.storage?.onChanged) return;
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      let needsUpdate = false;
+      if (changes[EXCLUDE_RULES_KEY]) {
+        const r = changes[EXCLUDE_RULES_KEY].newValue || {};
+        state.meetingExcludeRules = { exact: [], prefix: [], suffix: [], partial: [], ...r };
+        needsUpdate = true;
+      }
+      if (changes[WORK_HOURS_KEY]) {
+        const wh = changes[WORK_HOURS_KEY].newValue;
+        state.meetingWorkStart = wh?.start ?? DEFAULT_WORK_START;
+        state.meetingWorkEnd = wh?.end ?? DEFAULT_WORK_END;
+        state.lunchMinutes = wh?.lunch ?? DEFAULT_LUNCH_MINUTES;
+        needsUpdate = true;
+      }
+      if (changes[ROOM_EMAIL_DOMAIN_KEY]) {
+        state.roomEmailDomain = changes[ROOM_EMAIL_DOMAIN_KEY].newValue || "";
+        needsUpdate = true;
+      }
+      if (changes[COLOR_THRESHOLDS_KEY]) {
+        state.colorThresholds = { ...DEFAULT_THRESHOLDS, ...changes[COLOR_THRESHOLDS_KEY].newValue };
+        needsUpdate = true;
+      }
+      if (needsUpdate) {
+        clearMeetingTimeCache();
+        scheduleTimeUpdate();
+      }
+    });
+  };
+
+  const getWeekCapacity = (weekData) => {
+    const hoursPerDay = state.meetingWorkEnd - state.meetingWorkStart - state.lunchMinutes / 60;
+    const days = WORK_DAYS_PER_WEEK - (weekData?.oofDays || 0);
+    return hoursPerDay * Math.max(days, 1);
+  };
+
+  const formatWeekLabel = (weekKey) => {
+    const parts = weekKey.split("-");
+    return `${Number.parseInt(parts[1], 10)}/${Number.parseInt(parts[2], 10)}`;
+  };
+
+  const clearTimeHighlights = () => {
+    document.querySelectorAll(`.${TIME_HIGHLIGHT_CLASS}`).forEach((el) => {
+      el.classList.remove(TIME_HIGHLIGHT_CLASS);
+    });
+  };
+
+  const applyTimeHighlights = (targetWeekKey) => {
+    clearTimeHighlights();
+    const events = collectEvents().filter(isMeetingForTimeCalc);
+    const seenIds = new Set();
+    let count = 0;
+    for (const el of events) {
+      const calItemId = el.dataset.calitemid;
+      if (calItemId && seenIds.has(calItemId)) continue;
+      if (calItemId) seenIds.add(calItemId);
+      const label = getAriaLabel(el);
+      const date = extractDate(label);
+      if (!date) continue;
+      const weekKey = formatWeekKey(getWeekMonday(date));
+      if (weekKey === targetWeekKey) {
+        el.classList.add(TIME_HIGHLIGHT_CLASS);
+        count += 1;
+      }
+    }
+    return count;
+  };
+
+  const toggleTimeHighlight = () => {
+    state.timeHighlightActive = !state.timeHighlightActive;
+    if (state.timeHighlightActive) {
+      applyTimeHighlights(formatWeekKey(getWeekMonday(new Date())));
+    } else {
+      clearTimeHighlights();
+    }
+    const header = document.querySelector(".oce-time-current");
+    if (header) {
+      header.dataset.active = String(state.timeHighlightActive);
+    }
+  };
+
+  const getPctLevel = (pct) => {
+    const t = state.colorThresholds;
+    if (pct <= t.low) return "low";
+    if (pct <= t.mid) return "mid";
+    if (pct <= t.high) return "high";
+    return "critical";
+  };
+
+  const ensureTimeInsights = () => {
+    if (document.getElementById(TIME_INSIGHTS_ID)) return;
+    const summary = document.getElementById(SELECTED_SUMMARY_ID);
+    if (!summary) return;
+
+    const container = document.createElement("div");
+    container.id = TIME_INSIGHTS_ID;
+    container.innerHTML = "";
+
+    summary.after(container);
+    renderTimeInsights();
+  };
+
+  const renderTimeInsights = () => {
+    const container = document.getElementById(TIME_INSIGHTS_ID);
+    if (!container) return;
+    container.textContent = "";
+
+    const data = state.meetingTimeData;
+    const keys = Object.keys(data).sort((a, b) => a.localeCompare(b));
+    if (keys.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "oce-time-header";
+      empty.textContent = "ミーティング時間: データなし";
+      container.appendChild(empty);
+      return;
+    }
+
+    const today = new Date();
+    const currentMonday = getWeekMonday(today);
+    const currentWeekKey = formatWeekKey(currentMonday);
+    const currentData = data[currentWeekKey];
+
+    const header = document.createElement("div");
+    header.className = "oce-time-header";
+    const title = document.createElement("span");
+    title.textContent = "ミーティング時間";
+    header.appendChild(title);
+    if (currentData) {
+      const pct = Math.round((currentData.total / getWeekCapacity(currentData)) * 100);
+      const current = document.createElement("span");
+      current.className = "oce-time-current";
+      current.textContent = `今週: ${currentData.total}h (${pct}%)`;
+      current.title = "クリックで対象予定をハイライト";
+      current.dataset.level = getPctLevel(pct);
+      current.dataset.active = String(state.timeHighlightActive);
+      current.addEventListener("click", toggleTimeHighlight);
+      header.appendChild(current);
+    }
+    container.appendChild(header);
+
+    const defaultCapacity = (state.meetingWorkEnd - state.meetingWorkStart) * WORK_DAYS_PER_WEEK;
+    const maxScale = Math.max(defaultCapacity, ...keys.map((k) => data[k].total), 1);
+
+    const bars = document.createElement("div");
+    bars.className = "oce-time-bars";
+    for (const key of keys) {
+      const week = data[key];
+      const capacity = getWeekCapacity(week);
+      const row = document.createElement("div");
+      row.className = "oce-time-bar-row";
+      if (key === currentWeekKey) row.dataset.current = "true";
+
+      const label = document.createElement("span");
+      label.className = "oce-time-bar-label";
+      label.textContent = formatWeekLabel(key);
+      row.appendChild(label);
+
+      const trackWrapper = document.createElement("div");
+      trackWrapper.className = "oce-time-bar-track-wrapper";
+
+      const track = document.createElement("div");
+      track.className = "oce-time-bar-track";
+      const capacityPct = (capacity / maxScale) * 100;
+      track.style.width = `${capacityPct}%`;
+
+      const safeCapacity = Math.max(capacity, 0.1);
+      const recurPct = Math.min((week.recurring / safeCapacity) * 100, 100);
+      const oneTimePct = Math.min((week.oneTime / safeCapacity) * 100, 100 - recurPct);
+
+      const recurBar = document.createElement("div");
+      recurBar.className = "oce-time-bar-recurring";
+      recurBar.style.width = `${recurPct}%`;
+      track.appendChild(recurBar);
+
+      const oneTimeBar = document.createElement("div");
+      oneTimeBar.className = "oce-time-bar-onetime";
+      oneTimeBar.style.width = `${oneTimePct}%`;
+      track.appendChild(oneTimeBar);
+
+      trackWrapper.appendChild(track);
+      row.appendChild(trackWrapper);
+
+      const weekPct = Math.round((week.total / capacity) * 100);
+      const hours = document.createElement("span");
+      hours.className = "oce-time-bar-hours";
+      hours.dataset.level = getPctLevel(weekPct);
+      hours.textContent = `${week.total}h (${weekPct}%)`;
+      row.appendChild(hours);
+
+      row.addEventListener("mouseenter", () => {
+        const highlighted = applyTimeHighlights(key);
+        showToast(`${formatWeekLabel(key)}週: ${highlighted}件ハイライト`);
+      });
+      row.addEventListener("mouseleave", () => {
+        clearTimeHighlights();
+      });
+
+      bars.appendChild(row);
+    }
+    container.appendChild(bars);
+
+    const legend = document.createElement("div");
+    legend.className = "oce-time-legend";
+
+    const recurLegend = document.createElement("span");
+    recurLegend.className = "oce-time-legend-item";
+    const recurSwatch = document.createElement("span");
+    recurSwatch.className = "oce-time-legend-swatch recurring";
+    recurLegend.appendChild(recurSwatch);
+    recurLegend.append("定期");
+    legend.appendChild(recurLegend);
+
+    const oneLegend = document.createElement("span");
+    oneLegend.className = "oce-time-legend-item";
+    const oneSwatch = document.createElement("span");
+    oneSwatch.className = "oce-time-legend-swatch onetime";
+    oneLegend.appendChild(oneSwatch);
+    oneLegend.append("単発");
+    legend.appendChild(oneLegend);
+
+    container.appendChild(legend);
+  };
+
+  let pendingTimeUpdate = null;
+
+  const updateTimeInsights = () => {
+    const events = collectEvents();
+    const currentIds = events
+      .filter((el) => el.dataset.calitemid)
+      .map((el) => el.dataset.calitemid)
+      .sort((a, b) => a.localeCompare(b))
+      .join(",");
+    if (currentIds === state.lastTimeItemIds && currentIds.length > 0) return;
+    state.lastTimeItemIds = currentIds;
+
+    const newData = collectMeetingData();
+    saveMeetingTimeData(newData);
+    const afterRender = () => {
+      renderTimeInsights();
+      if (state.timeHighlightActive) applyTimeHighlights(state.highlightWeekKey || formatWeekKey(getWeekMonday(new Date())));
+    };
+    if (globalThis.requestAnimationFrame) {
+      globalThis.requestAnimationFrame(afterRender);
+    } else {
+      afterRender();
+    }
+  };
+
+  const scheduleTimeUpdate = () => {
+    if (pendingTimeUpdate) {
+      globalThis.clearTimeout(pendingTimeUpdate);
+    }
+    pendingTimeUpdate = globalThis.setTimeout(() => {
+      pendingTimeUpdate = null;
+      updateTimeInsights();
+    }, 2000);
   };
 
   const searchUtils = globalThis.oceSearchUtils;
@@ -670,6 +1278,8 @@
         }
       }
       maybeAutofillAttendees();
+      ensureTimeInsights();
+      scheduleTimeUpdate();
     };
     if (globalThis.requestAnimationFrame) {
       globalThis.requestAnimationFrame(run);
@@ -1524,6 +2134,93 @@
     });
   };
 
+  const buildTimeInsightsDebug = () => {
+    const allEvents = collectEvents();
+    const meetingEvents = allEvents.filter(isMeetingForTimeCalc);
+    const counted = meetingEvents.map((el) => {
+      const label = getAriaLabel(el);
+      const timeRange = extractTimeRange(label);
+      const date = extractDate(label);
+      const duration = timeRange ? getDurationHours(timeRange.startStr, timeRange.endStr) : 0;
+      return {
+        title: label.split("、")[0].slice(0, 80),
+        time: timeRange ? `${timeRange.startStr}-${timeRange.endStr}` : "",
+        date: date ? formatWeekKey(date) : "",
+        duration,
+        status: extractStatus(label),
+        recurring: isRecurringEvent(el)
+      };
+    });
+    const allDayEvents = allEvents.filter(isAllDayEvent);
+    const formatDateFromLabel = (label) => {
+      const d = extractDate(label);
+      return d ? formatWeekKey(d) : "";
+    };
+    const formatAttrs = (el) => [...el.attributes].map((a) => `${a.name}=${a.value.slice(0, 60)}`);
+    const allDaySamples = allDayEvents.slice(0, 5).map((el) => {
+      const label = getAriaLabel(el);
+      const childTitle = el.querySelector("[title]");
+      const parentLabel = el.parentElement ? (el.parentElement.getAttribute("aria-label") || "") : "";
+      return {
+        ariaLabel: label.slice(0, 120),
+        parentAriaLabel: parentLabel.slice(0, 120),
+        innerText: (el.innerText || "").slice(0, 120),
+        childTitle: childTitle ? childTitle.getAttribute("title").slice(0, 120) : "",
+        attrs: formatAttrs(el),
+        status: extractStatus(label),
+        date: formatDateFromLabel(label),
+        isOof: isOofDay(label)
+      };
+    });
+    const nonMeetingEvents = allEvents.filter((el) => !isAllDayEvent(el) && !isMeetingForTimeCalc(el));
+    const excludedEvents = nonMeetingEvents.slice(0, 20).map((el) => {
+      const label = getAriaLabel(el);
+      const status = extractStatus(label);
+      const timeRange = extractTimeRange(label);
+      let reason = "";
+      if (!label) reason = "no-label";
+      else if (IGNORE_LABEL_PATTERNS.some((p) => p.test(label))) reason = "cancelled/declined";
+      else if (IGNORE_STATUS_FOR_TIME.some((p) => p.test(status))) reason = `status:${status}`;
+      else if (isExcludedByRules(label)) reason = "exclude-keyword";
+      else if (timeRange) reason = "unknown";
+      else reason = "no-time-range";
+      const childTitles = [...el.querySelectorAll("[title]")].slice(0, 3).map((c) => c.getAttribute("title").slice(0, 120));
+      const hasAriaLabelChild = !!el.querySelector("[aria-label]");
+      return {
+        title: (label || (el.innerText || "")).split(/[、\n]/)[0].slice(0, 80),
+        ariaLabel: label.slice(0, 200),
+        hasAriaLabelChild,
+        childTitles,
+        innerText: (el.innerText || "").slice(0, 120),
+        status,
+        reason
+      };
+    });
+    const formatChildren = (el) => [...el.children].map((c) => ({
+      tag: c.tagName,
+      className: (c.className || "").slice(0, 60),
+      text: (c.textContent || "").slice(0, 80),
+      title: c.getAttribute("title") || ""
+    }));
+    const eventDomSamples = meetingEvents.slice(0, 5).map((el) => ({
+      ariaLabel: (el.getAttribute("aria-label") || "").slice(0, 120),
+      attrs: formatAttrs(el),
+      innerText: (el.innerText || "").slice(0, 120),
+      childCount: el.children.length,
+      children: formatChildren(el).slice(0, 5)
+    }));
+    return {
+      totalEvents: allEvents.length,
+      meetingEvents: meetingEvents.length,
+      storedData: state.meetingTimeData,
+      roomEmailDomain: state.roomEmailDomain,
+      countedEvents: counted,
+      allDayEvents: allDaySamples,
+      excludedEvents,
+      eventDomSamples
+    };
+  };
+
   const collectDebugInfo = () => {
     const docs = collectDocuments(document);
     const contentEditableTotal = docs.reduce(
@@ -1653,7 +2350,8 @@
       suggestionCount: findSuggestionItems().length,
       iframeCount: iframes.length,
       iframes,
-      userAgent: navigator.userAgent
+      userAgent: navigator.userAgent,
+      timeInsights: buildTimeInsightsDebug()
     };
   };
 
@@ -1794,12 +2492,16 @@
   const boot = () => {
     loadContacts();
     watchContacts();
+    loadMeetingTimeData();
+    watchTimeSettings();
     ensureButton();
     ensureSearchBox();
     ensureSelectedSummary();
+    ensureTimeInsights();
     ensureSelectionObserver();
     ensureShowAllExpanded();
     maybeAutofillAttendees();
+    scheduleTimeUpdate();
     startObserver();
   };
 

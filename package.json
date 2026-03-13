@@ -1,6 +1,6 @@
 {
   "name": "outlook-chrome-extension",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "scripts": {
     "sync:version": "node scripts/sync-version.js",
@@ -9,7 +9,8 @@
     "check:release-version": "node scripts/check-release-version.js --require-bump",
     "test:search": "node --test tests/search-filter.test.js",
     "test:coverage": "c8 --reporter=lcov --reporter=text node --test tests/search-filter.test.js",
-    "test:e2e": "npx playwright test --config e2e/playwright.config.js"
+    "test:e2e": "npx playwright test --config e2e/playwright.config.js",
+    "dev": "bash dev.sh"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

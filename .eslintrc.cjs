@@ -33,10 +33,12 @@ module.exports = {
         message: "Prefer Element#after() to insertAdjacentElement('afterend', ...)."
       }
     ],
+    "no-negated-condition": "error",
     "no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     "prefer-global-this": "error",
     "prefer-optional-chain": "error",
     "sonarjs/cognitive-complexity": ["error", 15],
+    "unicorn/prefer-at": "error",
     "unicorn/prefer-code-point": "error",
     "unicorn/prefer-dom-node-dataset": "error",
     "unicorn/prefer-string-replace-all": "error"

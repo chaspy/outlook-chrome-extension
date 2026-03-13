@@ -330,3 +330,157 @@
   align-items: center;
   gap: 4px;
 }
+
+#oce-time-insights {
+  padding: 8px;
+  background: #fff;
+  border-bottom: 1px solid #e5e5e5;
+  font-size: 12px;
+}
+
+.oce-time-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.oce-time-current {
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.oce-time-current[data-level="low"] { color: #107c10; }
+.oce-time-current[data-level="mid"] { color: #ca5010; }
+.oce-time-current[data-level="high"] { color: #d13438; }
+.oce-time-current[data-level="critical"] { color: #3b0a0a; text-shadow: 0 0 6px rgba(180, 0, 0, 0.5); }
+
+.oce-time-current:hover {
+  background: #f3f2f1;
+}
+
+.oce-time-current[data-active="true"] {
+  background: #323130;
+  color: #fff !important;
+}
+
+.oce-time-counted {
+  outline: 3px solid #0078d4 !important;
+  outline-offset: -2px !important;
+  box-shadow: inset 0 0 0 2px rgba(0, 120, 212, 0.3) !important;
+}
+
+.oce-time-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.oce-time-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.oce-time-bar-row:hover {
+  background: #f3f2f1;
+  border-radius: 4px;
+}
+
+.oce-time-bar-row[data-current="true"] {
+  font-weight: 600;
+}
+
+.oce-time-bar-row[data-current="true"] .oce-time-bar-track-wrapper {
+  outline: 1.5px solid #0078d4;
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+.oce-time-bar-label {
+  min-width: 32px;
+  text-align: right;
+  color: #605e5c;
+}
+
+.oce-time-bar-track-wrapper {
+  flex: 1;
+  height: 14px;
+  background: transparent;
+}
+
+.oce-time-bar-track {
+  height: 100%;
+  background: #f3f2f1;
+  border-radius: 3px;
+  overflow: hidden;
+  display: flex;
+}
+
+.oce-time-bar-recurring {
+  background: #0078d4;
+  height: 100%;
+}
+
+.oce-time-bar-onetime {
+  background: #a4ceeb;
+  height: 100%;
+}
+
+.oce-time-bar-hours {
+  min-width: 80px;
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.oce-time-bar-hours[data-level="low"] {
+  color: #107c10;
+}
+
+.oce-time-bar-hours[data-level="mid"] {
+  color: #ca5010;
+}
+
+.oce-time-bar-hours[data-level="high"] {
+  color: #d13438;
+}
+
+.oce-time-bar-hours[data-level="critical"] {
+  color: #3b0a0a;
+  text-shadow: 0 0 6px rgba(180, 0, 0, 0.5);
+}
+
+.oce-time-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: #605e5c;
+}
+
+.oce-time-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.oce-time-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.oce-time-legend-swatch.recurring {
+  background: #0078d4;
+}
+
+.oce-time-legend-swatch.onetime {
+  background: #a4ceeb;
+}

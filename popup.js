@@ -8,6 +8,38 @@ const contactsClearButton = document.getElementById("contacts-clear");
 const contactsStatus = document.getElementById("contacts-status");
 const contactsCount = document.getElementById("contacts-count");
 const CONTACTS_STORAGE_KEY = "oceContacts";
+const EXCLUDE_KEYWORDS_KEY = "oceMeetingExcludeKeywords";
+const WORK_HOURS_KEY = "oceMeetingWorkHours";
+const ROOM_EMAIL_DOMAIN_KEY = "oceRoomEmailDomain";
+const COLOR_THRESHOLDS_KEY = "oceColorThresholds";
+const EXCLUDE_RULES_KEY = "oceMeetingExcludeRules";
+const excludeExactInput = document.getElementById("exclude-exact");
+const excludePrefixInput = document.getElementById("exclude-prefix");
+const excludeSuffixInput = document.getElementById("exclude-suffix");
+const excludePartialInput = document.getElementById("exclude-partial");
+const excludeRulesSaveButton = document.getElementById("exclude-rules-save");
+const excludeRulesClearButton = document.getElementById("exclude-rules-clear");
+const excludeRulesStatus = document.getElementById("exclude-rules-status");
+const thresholdLowInput = document.getElementById("threshold-low");
+const thresholdMidInput = document.getElementById("threshold-mid");
+const thresholdHighInput = document.getElementById("threshold-high");
+const thresholdSaveButton = document.getElementById("threshold-save");
+const thresholdResetButton = document.getElementById("threshold-reset");
+const thresholdStatus = document.getElementById("threshold-status");
+const excludeInput = document.getElementById("exclude-keywords-input");
+const excludeSaveButton = document.getElementById("exclude-keywords-save");
+const excludeClearButton = document.getElementById("exclude-keywords-clear");
+const excludeStatus = document.getElementById("exclude-keywords-status");
+const roomDomainInput = document.getElementById("room-email-domain-input");
+const roomDomainSaveButton = document.getElementById("room-email-domain-save");
+const roomDomainClearButton = document.getElementById("room-email-domain-clear");
+const roomDomainStatus = document.getElementById("room-email-domain-status");
+const workStartInput = document.getElementById("work-start");
+const workEndInput = document.getElementById("work-end");
+const workLunchInput = document.getElementById("work-lunch");
+const workHoursSaveButton = document.getElementById("work-hours-save");
+const workHoursResetButton = document.getElementById("work-hours-reset");
+const workHoursStatus = document.getElementById("work-hours-status");
 
 const setStatus = (text) => {
   statusEl.textContent = text;
@@ -278,5 +310,213 @@ contactsClearButton.addEventListener("click", () => {
   });
 });
 
+const loadExcludeKeywords = () => {
+  if (!chrome?.storage?.local) return;
+  chrome.storage.local.get(EXCLUDE_KEYWORDS_KEY, (result) => {
+    const keywords = result[EXCLUDE_KEYWORDS_KEY];
+    if (Array.isArray(keywords) && keywords.length > 0) {
+      excludeInput.value = keywords.join(", ");
+    }
+  });
+};
+
+excludeSaveButton.addEventListener("click", () => {
+  const text = excludeInput.value || "";
+  const keywords = text
+    .split(",")
+    .map((kw) => kw.trim())
+    .filter((kw) => kw.length > 0);
+  if (!chrome?.storage?.local) {
+    excludeStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.set({ [EXCLUDE_KEYWORDS_KEY]: keywords }, () => {
+    excludeStatus.textContent = `保存しました (${keywords.length}件)`;
+  });
+});
+
+excludeClearButton.addEventListener("click", () => {
+  excludeInput.value = "";
+  if (!chrome?.storage?.local) {
+    excludeStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.remove(EXCLUDE_KEYWORDS_KEY, () => {
+    excludeStatus.textContent = "クリアしました";
+  });
+});
+
+const parseCommaSeparated = (text) =>
+  (text || "").split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+
+const loadExcludeRules = () => {
+  if (!chrome?.storage?.local) return;
+  chrome.storage.local.get(EXCLUDE_RULES_KEY, (result) => {
+    const r = result[EXCLUDE_RULES_KEY];
+    if (r) {
+      excludeExactInput.value = (r.exact || []).join(", ");
+      excludePrefixInput.value = (r.prefix || []).join(", ");
+      excludeSuffixInput.value = (r.suffix || []).join(", ");
+      excludePartialInput.value = (r.partial || []).join(", ");
+    }
+  });
+};
+
+excludeRulesSaveButton.addEventListener("click", () => {
+  const rules = {
+    exact: parseCommaSeparated(excludeExactInput.value),
+    prefix: parseCommaSeparated(excludePrefixInput.value),
+    suffix: parseCommaSeparated(excludeSuffixInput.value),
+    partial: parseCommaSeparated(excludePartialInput.value)
+  };
+  const total = rules.exact.length + rules.prefix.length + rules.suffix.length + rules.partial.length;
+  if (!chrome?.storage?.local) {
+    excludeRulesStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.set({ [EXCLUDE_RULES_KEY]: rules }, () => {
+    excludeRulesStatus.textContent = `保存しました (${total}件)`;
+  });
+});
+
+excludeRulesClearButton.addEventListener("click", () => {
+  excludeExactInput.value = "";
+  excludePrefixInput.value = "";
+  excludeSuffixInput.value = "";
+  excludePartialInput.value = "";
+  if (!chrome?.storage?.local) {
+    excludeRulesStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.remove(EXCLUDE_RULES_KEY, () => {
+    excludeRulesStatus.textContent = "クリアしました";
+  });
+});
+
+const loadRoomEmailDomain = () => {
+  if (!chrome?.storage?.local) return;
+  chrome.storage.local.get(ROOM_EMAIL_DOMAIN_KEY, (result) => {
+    const domain = result[ROOM_EMAIL_DOMAIN_KEY];
+    if (domain) {
+      roomDomainInput.value = domain;
+    }
+  });
+};
+
+roomDomainSaveButton.addEventListener("click", () => {
+  const domain = roomDomainInput.value.trim();
+  if (!chrome?.storage?.local) {
+    roomDomainStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.set({ [ROOM_EMAIL_DOMAIN_KEY]: domain }, () => {
+    roomDomainStatus.textContent = domain
+      ? `保存しました: ${domain}`
+      : "空で保存しました";
+  });
+});
+
+roomDomainClearButton.addEventListener("click", () => {
+  roomDomainInput.value = "";
+  if (!chrome?.storage?.local) {
+    roomDomainStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.remove(ROOM_EMAIL_DOMAIN_KEY, () => {
+    roomDomainStatus.textContent = "クリアしました";
+  });
+});
+
+const loadWorkHours = () => {
+  if (!chrome?.storage?.local) return;
+  chrome.storage.local.get(WORK_HOURS_KEY, (result) => {
+    const wh = result[WORK_HOURS_KEY];
+    if (wh) {
+      workStartInput.value = wh.start ?? 9;
+      workEndInput.value = wh.end ?? 18;
+      workLunchInput.value = wh.lunch ?? 60;
+    }
+  });
+};
+
+workHoursSaveButton.addEventListener("click", () => {
+  const start = Number.parseInt(workStartInput.value, 10);
+  const end = Number.parseInt(workEndInput.value, 10);
+  const lunch = Number.parseInt(workLunchInput.value, 10);
+  if (Number.isNaN(start) || Number.isNaN(end) || start >= end) {
+    workHoursStatus.textContent = "開始 < 終了 で入力してください。";
+    return;
+  }
+  const lunchVal = Number.isNaN(lunch) ? 60 : Math.max(0, lunch);
+  if (!chrome?.storage?.local) {
+    workHoursStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.set({ [WORK_HOURS_KEY]: { start, end, lunch: lunchVal } }, () => {
+    const effective = end - start - lunchVal / 60;
+    workHoursStatus.textContent = `保存しました (${start}:00〜${end}:00, 実働${effective}h/日)`;
+  });
+});
+
+workHoursResetButton.addEventListener("click", () => {
+  workStartInput.value = 9;
+  workEndInput.value = 18;
+  workLunchInput.value = 60;
+  if (!chrome?.storage?.local) {
+    workHoursStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.remove(WORK_HOURS_KEY, () => {
+    workHoursStatus.textContent = "リセットしました (9:00〜18:00)";
+  });
+});
+
+const loadColorThresholds = () => {
+  if (!chrome?.storage?.local) return;
+  chrome.storage.local.get(COLOR_THRESHOLDS_KEY, (result) => {
+    const t = result[COLOR_THRESHOLDS_KEY];
+    if (t) {
+      thresholdLowInput.value = t.low ?? 50;
+      thresholdMidInput.value = t.mid ?? 70;
+      thresholdHighInput.value = t.high ?? 90;
+    }
+  });
+};
+
+thresholdSaveButton.addEventListener("click", () => {
+  const low = Number.parseInt(thresholdLowInput.value, 10);
+  const mid = Number.parseInt(thresholdMidInput.value, 10);
+  const high = Number.parseInt(thresholdHighInput.value, 10);
+  if (Number.isNaN(low) || Number.isNaN(mid) || Number.isNaN(high) || low >= mid || mid >= high) {
+    thresholdStatus.textContent = "値は 低 < 中 < 高 の順で入力してください。";
+    return;
+  }
+  if (!chrome?.storage?.local) {
+    thresholdStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.set({ [COLOR_THRESHOLDS_KEY]: { low, mid, high } }, () => {
+    thresholdStatus.textContent = `保存しました (〜${low}% / 〜${mid}% / 〜${high}% / 超)`;
+  });
+});
+
+thresholdResetButton.addEventListener("click", () => {
+  thresholdLowInput.value = 50;
+  thresholdMidInput.value = 70;
+  thresholdHighInput.value = 90;
+  if (!chrome?.storage?.local) {
+    thresholdStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.remove(COLOR_THRESHOLDS_KEY, () => {
+    thresholdStatus.textContent = "リセットしました (50/70/90)";
+  });
+});
+
 loadContactsCount();
+loadExcludeKeywords();
+loadExcludeRules();
+loadRoomEmailDomain();
+loadWorkHours();
+loadColorThresholds();
 void fetchDebugInfo();

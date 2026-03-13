@@ -50,7 +50,8 @@ button:disabled {
   margin-bottom: 6px;
 }
 
-textarea {
+textarea,
+input[type="text"] {
   width: 100%;
   box-sizing: border-box;
   border-radius: 8px;
@@ -60,4 +61,60 @@ textarea {
   font-size: 11px;
   line-height: 1.4;
   resize: vertical;
+}
+
+input[type="text"] {
+  resize: none;
+  margin-bottom: 8px;
+}
+
+.panel {
+  margin-bottom: 12px;
+}
+
+.panel h2 {
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+
+.panel p {
+  font-size: 11px;
+  color: #4a4a4a;
+  margin: 0 0 6px;
+}
+
+.count {
+  font-size: 11px;
+  color: #605e5c;
+}
+
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 2px;
+  margin-top: 6px;
+}
+
+.field-hint {
+  font-weight: 400;
+  color: #8a8886;
+}
+
+.inline-fields {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.inline-fields input[type="number"] {
+  width: 50px;
+  padding: 4px 6px;
+  border: 1px solid #c9c3b8;
+  border-radius: 6px;
+  background: #fffefc;
+  font-size: 12px;
+  text-align: center;
 }

@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Outlook Debug</title>
+    <title>Outlook Calendar Extension</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <header>
-      <h1>Outlook Debug</h1>
-      <p>現在のタブからデバッグ情報を取得します。</p>
+      <h1>Outlook Calendar Extension</h1>
+      <p>ミーティング時間集計・重複検出の設定を管理します。</p>
     </header>
 
     <section class="panel">
@@ -27,6 +27,83 @@
       </div>
       <div class="status" id="contacts-status"></div>
       <div class="count">登録件数: <span id="contacts-count">0</span></div>
+    </section>
+
+    <section class="panel">
+      <h2>ミーティング時間: 除外ルール</h2>
+      <p>カンマ区切りで入力。予定タイトルに対してマッチした予定を時間集計から除外します。</p>
+      <label class="field-label" for="exclude-exact">完全一致 <span class="field-hint">タイトルが完全に一致</span></label>
+      <input id="exclude-exact" type="text" placeholder="例: 移動, おやすみ" spellcheck="false" />
+      <label class="field-label" for="exclude-prefix">前方一致 <span class="field-hint">タイトルが指定文字列で始まる</span></label>
+      <input id="exclude-prefix" type="text" placeholder="例: オンライン_" spellcheck="false" />
+      <label class="field-label" for="exclude-suffix">後方一致 <span class="field-hint">タイトルが指定文字列で終わる</span></label>
+      <input id="exclude-suffix" type="text" placeholder="" spellcheck="false" />
+      <label class="field-label" for="exclude-partial">部分一致 <span class="field-hint">タイトルに文字列を含む</span></label>
+      <input id="exclude-partial" type="text" placeholder="例: ブロック" spellcheck="false" />
+      <div class="actions">
+        <button id="exclude-rules-save" type="button">保存</button>
+        <button id="exclude-rules-clear" type="button">クリア</button>
+      </div>
+      <div class="status" id="exclude-rules-status"></div>
+    </section>
+
+    <!-- 旧キーワード設定（後方互換。新ルールに移行後は不要） -->
+    <section class="panel" style="display:none">
+      <input id="exclude-keywords-input" type="text" spellcheck="false" />
+      <button id="exclude-keywords-save" type="button">保存</button>
+      <button id="exclude-keywords-clear" type="button">クリア</button>
+      <div id="exclude-keywords-status"></div>
+    </section>
+
+    <!-- 会議室メールドメイン設定: DOM から出席者情報を取得できないため非表示 -->
+    <section class="panel" id="room-email-domain-section" style="display:none">
+      <h2>ミーティング時間: 会議室除外</h2>
+      <p>会議室メールのドメイン。出席者が自分と会議室のみの予定を除外します。</p>
+      <input
+        id="room-email-domain-input"
+        type="text"
+        placeholder="例: @room.example.com"
+        spellcheck="false"
+      />
+      <div class="actions">
+        <button id="room-email-domain-save" type="button">保存</button>
+        <button id="room-email-domain-clear" type="button">クリア</button>
+      </div>
+      <div class="status" id="room-email-domain-status"></div>
+    </section>
+
+    <section class="panel">
+      <h2>ミーティング時間: 勤務時間</h2>
+      <p>この範囲外の予定は集計から除外されます。</p>
+      <div class="inline-fields">
+        <input id="work-start" type="number" min="0" max="23" value="9" /> 時 〜
+        <input id="work-end" type="number" min="1" max="24" value="18" /> 時
+        　昼休み <input id="work-lunch" type="number" min="0" max="120" value="60" /> 分
+      </div>
+      <div class="actions">
+        <button id="work-hours-save" type="button">保存</button>
+        <button id="work-hours-reset" type="button">リセット (9-18)</button>
+      </div>
+      <div class="status" id="work-hours-status"></div>
+    </section>
+
+    <section class="panel">
+      <h2>ミーティング時間: 色の閾値 (%)</h2>
+      <p>割合に応じた色分けの閾値を設定します。</p>
+      <div class="inline-fields">
+        〜<input id="threshold-low" type="number" min="0" max="100" value="50" />%
+        <span class="threshold-swatch" style="color:#107c10">■</span>
+        〜<input id="threshold-mid" type="number" min="0" max="100" value="70" />%
+        <span class="threshold-swatch" style="color:#ca5010">■</span>
+        〜<input id="threshold-high" type="number" min="0" max="100" value="90" />%
+        <span class="threshold-swatch" style="color:#d13438">■</span>
+        超 <span class="threshold-swatch" style="color:#3b0a0a">■</span>
+      </div>
+      <div class="actions">
+        <button id="threshold-save" type="button">保存</button>
+        <button id="threshold-reset" type="button">リセット</button>
+      </div>
+      <div class="status" id="threshold-status"></div>
     </section>
 
     <section class="panel">
