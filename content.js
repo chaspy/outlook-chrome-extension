@@ -120,6 +120,7 @@
     roomEmailDomain: "",
     colorThresholds: { ...DEFAULT_THRESHOLDS },
     timeHighlightActive: false,
+    highlightWeekKey: "",
     lastTimeItemIds: ""
   };
 
@@ -511,11 +512,9 @@
     });
   };
 
-  const applyTimeHighlights = () => {
+  const applyTimeHighlights = (targetWeekKey) => {
     clearTimeHighlights();
     const events = collectEvents().filter(isMeetingForTimeCalc);
-    const today = new Date();
-    const currentWeekKey = formatWeekKey(getWeekMonday(today));
     const seenIds = new Set();
     for (const el of events) {
       const calItemId = el.dataset.calitemid;
@@ -525,7 +524,7 @@
       const date = extractDate(label);
       if (!date) continue;
       const weekKey = formatWeekKey(getWeekMonday(date));
-      if (weekKey === currentWeekKey) {
+      if (weekKey === targetWeekKey) {
         el.classList.add(TIME_HIGHLIGHT_CLASS);
       }
     }
@@ -534,7 +533,7 @@
   const toggleTimeHighlight = () => {
     state.timeHighlightActive = !state.timeHighlightActive;
     if (state.timeHighlightActive) {
-      applyTimeHighlights();
+      applyTimeHighlights(formatWeekKey(getWeekMonday(new Date())));
     } else {
       clearTimeHighlights();
     }
@@ -652,6 +651,14 @@
       hours.textContent = `${week.total}h (${weekPct}%)`;
       row.appendChild(hours);
 
+      row.style.cursor = "pointer";
+      row.addEventListener("mouseenter", () => {
+        applyTimeHighlights(key);
+      });
+      row.addEventListener("mouseleave", () => {
+        clearTimeHighlights();
+      });
+
       bars.appendChild(row);
     }
     container.appendChild(bars);
@@ -694,7 +701,7 @@
     saveMeetingTimeData(newData);
     const afterRender = () => {
       renderTimeInsights();
-      if (state.timeHighlightActive) applyTimeHighlights();
+      if (state.timeHighlightActive) applyTimeHighlights(state.highlightWeekKey || formatWeekKey(getWeekMonday(new Date())));
     };
     if (globalThis.requestAnimationFrame) {
       globalThis.requestAnimationFrame(afterRender);
@@ -2271,6 +2278,25 @@
             isOof: isOofDay(label)
           };
         });
+        const nonMeetingEvents = allEvents.filter((el) => !isAllDayEvent(el) && !isMeetingForTimeCalc(el));
+        const excludedEvents = nonMeetingEvents.slice(0, 20).map((el) => {
+          const label = getAriaLabel(el);
+          const status = extractStatus(label);
+          const timeRange = extractTimeRange(label);
+          let reason = "";
+          if (IGNORE_LABEL_PATTERNS.some((p) => p.test(label))) reason = "cancelled/declined";
+          else if (IGNORE_STATUS_FOR_TIME.some((p) => p.test(status))) reason = `status:${status}`;
+          else if (state.meetingExcludeKeywords.length > 0 && state.meetingExcludeKeywords.some((kw) => label.toLowerCase().includes(kw.toLowerCase()))) reason = "exclude-keyword";
+          else if (!timeRange) reason = "no-time-range";
+          else if (!label) reason = "no-label";
+          else reason = "unknown";
+          return {
+            title: label.split("、")[0].slice(0, 80),
+            ariaLabel: label.slice(0, 200),
+            status,
+            reason
+          };
+        });
         const eventDomSamples = meetingEvents.slice(0, 5).map((el) => {
           const attrs = [...el.attributes].map((a) => `${a.name}=${a.value.slice(0, 60)}`);
           const children = [...el.children].map((c) => ({
@@ -2294,6 +2320,7 @@
           roomEmailDomain: state.roomEmailDomain,
           countedEvents: counted,
           allDayEvents: allDaySamples,
+          excludedEvents,
           eventDomSamples
         };
       })()

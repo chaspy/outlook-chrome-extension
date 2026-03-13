@@ -391,6 +391,11 @@
   font-size: 11px;
 }
 
+.oce-time-bar-row:hover {
+  background: #f3f2f1;
+  border-radius: 4px;
+}
+
 .oce-time-bar-row[data-current="true"] {
   font-weight: 600;
 }
