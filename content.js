@@ -654,14 +654,12 @@
       hours.textContent = `${week.total}h (${weekPct}%)`;
       row.appendChild(hours);
 
-      row.style.cursor = "default";
       row.addEventListener("mouseenter", () => {
         const highlighted = applyTimeHighlights(key);
-        row.title = `${highlighted}件のイベントをハイライト中`;
+        showToast(`${formatWeekLabel(key)}週: ${highlighted}件ハイライト`);
       });
       row.addEventListener("mouseleave", () => {
         clearTimeHighlights();
-        row.title = "";
       });
 
       bars.appendChild(row);
