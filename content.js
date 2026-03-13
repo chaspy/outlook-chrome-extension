@@ -21,7 +21,8 @@
     /^Declined:/i,
     /^キャンセル済み:/,
     /^キャンセルイベント/,
-    /^辞退:/
+    /^辞退:/,
+    /^予定のキャンセル:/
   ];
   const IGNORE_STATUS_PATTERNS = [/,\s*Free\b/i, /,\s*空き\b/, /,\s*空き時間\b/];
   const ATTENDEE_PLACEHOLDERS = [
@@ -57,6 +58,7 @@
     "Busy", "Free", "Tentative", "Out of Office", "Working Elsewhere",
     "予定あり", "空き", "空き時間", "仮の予定", "外出中", "他の場所で作業"
   ]);
+  const WORK_HOURS_PER_WEEK = 40;
   const MONTH_NAMES = {
     january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
     july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
@@ -386,9 +388,10 @@
     title.textContent = "ミーティング時間";
     header.appendChild(title);
     if (currentData) {
+      const pct = Math.round((currentData.total / WORK_HOURS_PER_WEEK) * 100);
       const current = document.createElement("span");
       current.className = "oce-time-current";
-      current.textContent = `今週: ${currentData.total}h`;
+      current.textContent = `今週: ${currentData.total}h (${pct}%)`;
       header.appendChild(current);
     }
     container.appendChild(header);
@@ -426,9 +429,10 @@
 
       row.appendChild(track);
 
+      const weekPct = Math.round((week.total / WORK_HOURS_PER_WEEK) * 100);
       const hours = document.createElement("span");
       hours.className = "oce-time-bar-hours";
-      hours.textContent = `${week.total}h`;
+      hours.textContent = `${week.total}h (${weekPct}%)`;
       row.appendChild(hours);
 
       bars.appendChild(row);
@@ -2015,29 +2019,26 @@
       userAgent: navigator.userAgent,
       timeInsights: (() => {
         const allEvents = collectEvents();
-        const diagnostics = allEvents.slice(0, 10).map((el) => {
+        const meetingEvents = allEvents.filter(isMeetingForTimeCalc);
+        const counted = meetingEvents.map((el) => {
           const label = getAriaLabel(el);
-          const inTemplate = !!el.closest(".templateColumnContent");
           const timeRange = extractTimeRange(label);
           const date = extractDate(label);
-          const status = extractStatus(label);
+          const duration = timeRange ? getDurationHours(timeRange.startStr, timeRange.endStr) : 0;
           return {
-            label: label.slice(0, 200),
-            inTemplate,
-            hasTimeRange: !!timeRange,
-            timeRange: timeRange || null,
-            hasDate: !!date,
-            status,
-            isIgnorable: IGNORE_LABEL_PATTERNS.some((p) => p.test(label)),
-            statusIgnored: IGNORE_STATUS_FOR_TIME.some((p) => p.test(status)),
-            calitemid: el.dataset.calitemid || null
+            title: label.split("、")[0].slice(0, 80),
+            time: timeRange ? `${timeRange.startStr}-${timeRange.endStr}` : "",
+            date: date ? formatWeekKey(date) : "",
+            duration,
+            status: extractStatus(label),
+            recurring: isRecurringEvent(el)
           };
         });
         return {
           totalEvents: allEvents.length,
-          meetingEvents: allEvents.filter(isMeetingForTimeCalc).length,
+          meetingEvents: meetingEvents.length,
           storedData: state.meetingTimeData,
-          eventDiagnostics: diagnostics
+          countedEvents: counted
         };
       })()
     };
