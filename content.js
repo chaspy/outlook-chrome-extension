@@ -320,6 +320,10 @@
     }
   };
 
+  const clearMeetingTimeCache = () => {
+    state.lastTimeItemIds = "";
+  };
+
   const loadMeetingTimeData = () => {
     if (!chrome?.storage?.local) return;
     chrome.storage.local.get([TIME_STORAGE_KEY, EXCLUDE_KEYWORDS_KEY], (result) => {
@@ -339,6 +343,7 @@
       if (changes[EXCLUDE_KEYWORDS_KEY]) {
         const newValue = changes[EXCLUDE_KEYWORDS_KEY].newValue;
         state.meetingExcludeKeywords = Array.isArray(newValue) ? newValue : [];
+        clearMeetingTimeCache();
         scheduleTimeUpdate();
       }
     });
