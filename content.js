@@ -2287,15 +2287,20 @@
           const status = extractStatus(label);
           const timeRange = extractTimeRange(label);
           let reason = "";
-          if (IGNORE_LABEL_PATTERNS.some((p) => p.test(label))) reason = "cancelled/declined";
+          if (!label) reason = "no-label";
+          else if (IGNORE_LABEL_PATTERNS.some((p) => p.test(label))) reason = "cancelled/declined";
           else if (IGNORE_STATUS_FOR_TIME.some((p) => p.test(status))) reason = `status:${status}`;
           else if (state.meetingExcludeKeywords.length > 0 && state.meetingExcludeKeywords.some((kw) => label.toLowerCase().includes(kw.toLowerCase()))) reason = "exclude-keyword";
           else if (!timeRange) reason = "no-time-range";
-          else if (!label) reason = "no-label";
           else reason = "unknown";
+          const childTitles = [...el.querySelectorAll("[title]")].slice(0, 3).map((c) => c.getAttribute("title").slice(0, 120));
+          const hasAriaLabelChild = !!el.querySelector("[aria-label]");
           return {
-            title: label.split("、")[0].slice(0, 80),
+            title: (label || (el.innerText || "")).split(/[、\n]/)[0].slice(0, 80),
             ariaLabel: label.slice(0, 200),
+            hasAriaLabelChild,
+            childTitles,
+            innerText: (el.innerText || "").slice(0, 120),
             status,
             reason
           };
