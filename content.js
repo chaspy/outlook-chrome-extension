@@ -308,7 +308,7 @@
     for (const [key, value] of Object.entries(newWeekData)) {
       merged[key] = value;
     }
-    const keys = Object.keys(merged).sort().reverse();
+    const keys = Object.keys(merged).sort((a, b) => a.localeCompare(b)).reverse();
     const pruned = {};
     for (let i = 0; i < Math.min(keys.length, MAX_WEEKS_STORED); i += 1) {
       pruned[keys[i]] = merged[keys[i]];
@@ -367,7 +367,7 @@
     container.textContent = "";
 
     const data = state.meetingTimeData;
-    const keys = Object.keys(data).sort();
+    const keys = Object.keys(data).sort((a, b) => a.localeCompare(b));
     if (keys.length === 0) {
       const empty = document.createElement("div");
       empty.className = "oce-time-header";
@@ -465,7 +465,7 @@
     const currentIds = events
       .filter((el) => el.dataset.calitemid)
       .map((el) => el.dataset.calitemid)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .join(",");
     if (currentIds === state.lastTimeItemIds && currentIds.length > 0) return;
     state.lastTimeItemIds = currentIds;
