@@ -285,3 +285,48 @@
   color: #8a8886;
   padding: 4px 0;
 }
+
+.oce-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #a19f9d;
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.oce-copy-btn:hover {
+  background: #f3f2f1;
+  color: #605e5c;
+}
+
+.oce-action-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.oce-selected-email-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.oce-search-hints-name-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.oce-search-hints-email-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
