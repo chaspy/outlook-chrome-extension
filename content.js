@@ -43,6 +43,9 @@
   const TIME_INSIGHTS_ID = "oce-time-insights";
   const TIME_STORAGE_KEY = "oceMeetingTime";
   const EXCLUDE_KEYWORDS_KEY = "oceMeetingExcludeKeywords";
+  const WORK_HOURS_KEY = "oceMeetingWorkHours";
+  const DEFAULT_WORK_START = 9;
+  const DEFAULT_WORK_END = 18;
   const IGNORE_STATUS_FOR_TIME = [
     /\bFree\b/i, /\b空き\b/, /\b空き時間\b/,
     /\bOut of Office\b/i, /\b外出中\b/
@@ -58,7 +61,7 @@
     "Busy", "Free", "Tentative", "Out of Office", "Working Elsewhere",
     "予定あり", "空き", "空き時間", "仮の予定", "外出中", "他の場所で作業"
   ]);
-  const WORK_HOURS_PER_WEEK = 40;
+  const WORK_DAYS_PER_WEEK = 5;
   const MONTH_NAMES = {
     january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
     july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
@@ -98,6 +101,8 @@
     lastIgnoredError: "",
     meetingTimeData: {},
     meetingExcludeKeywords: [],
+    meetingWorkStart: DEFAULT_WORK_START,
+    meetingWorkEnd: DEFAULT_WORK_END,
     lastTimeItemIds: ""
   };
 
@@ -190,8 +195,12 @@
     const startMin = parseTimeToMinutes(startStr);
     const endMin = parseTimeToMinutes(endStr);
     if (startMin === null || endMin === null) return 0;
-    let diff = endMin - startMin;
-    if (diff <= 0) diff += 24 * 60;
+    const workStartMin = state.meetingWorkStart * 60;
+    const workEndMin = state.meetingWorkEnd * 60;
+    const clampedStart = Math.max(startMin, workStartMin);
+    const clampedEnd = Math.min(endMin, workEndMin);
+    const diff = clampedEnd - clampedStart;
+    if (diff <= 0) return 0;
     return diff / 60;
   };
 
@@ -326,23 +335,37 @@
 
   const loadMeetingTimeData = () => {
     if (!chrome?.storage?.local) return;
-    chrome.storage.local.get([TIME_STORAGE_KEY, EXCLUDE_KEYWORDS_KEY], (result) => {
+    chrome.storage.local.get([TIME_STORAGE_KEY, EXCLUDE_KEYWORDS_KEY, WORK_HOURS_KEY], (result) => {
       if (result[TIME_STORAGE_KEY]) {
         state.meetingTimeData = result[TIME_STORAGE_KEY];
       }
       if (Array.isArray(result[EXCLUDE_KEYWORDS_KEY])) {
         state.meetingExcludeKeywords = result[EXCLUDE_KEYWORDS_KEY];
       }
+      if (result[WORK_HOURS_KEY]) {
+        state.meetingWorkStart = result[WORK_HOURS_KEY].start ?? DEFAULT_WORK_START;
+        state.meetingWorkEnd = result[WORK_HOURS_KEY].end ?? DEFAULT_WORK_END;
+      }
     });
   };
 
-  const watchExcludeKeywords = () => {
+  const watchTimeSettings = () => {
     if (!chrome?.storage?.onChanged) return;
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
+      let needsUpdate = false;
       if (changes[EXCLUDE_KEYWORDS_KEY]) {
         const newValue = changes[EXCLUDE_KEYWORDS_KEY].newValue;
         state.meetingExcludeKeywords = Array.isArray(newValue) ? newValue : [];
+        needsUpdate = true;
+      }
+      if (changes[WORK_HOURS_KEY]) {
+        const wh = changes[WORK_HOURS_KEY].newValue;
+        state.meetingWorkStart = wh?.start ?? DEFAULT_WORK_START;
+        state.meetingWorkEnd = wh?.end ?? DEFAULT_WORK_END;
+        needsUpdate = true;
+      }
+      if (needsUpdate) {
         clearMeetingTimeCache();
         scheduleTimeUpdate();
       }
@@ -393,7 +416,7 @@
     title.textContent = "ミーティング時間";
     header.appendChild(title);
     if (currentData) {
-      const pct = Math.round((currentData.total / WORK_HOURS_PER_WEEK) * 100);
+      const pct = Math.round((currentData.total / ((state.meetingWorkEnd - state.meetingWorkStart) * WORK_DAYS_PER_WEEK)) * 100);
       const current = document.createElement("span");
       current.className = "oce-time-current";
       current.textContent = `今週: ${currentData.total}h (${pct}%)`;
@@ -434,7 +457,7 @@
 
       row.appendChild(track);
 
-      const weekPct = Math.round((week.total / WORK_HOURS_PER_WEEK) * 100);
+      const weekPct = Math.round((week.total / ((state.meetingWorkEnd - state.meetingWorkStart) * WORK_DAYS_PER_WEEK)) * 100);
       const hours = document.createElement("span");
       hours.className = "oce-time-bar-hours";
       hours.textContent = `${week.total}h (${weekPct}%)`;
@@ -2187,7 +2210,7 @@
     loadContacts();
     watchContacts();
     loadMeetingTimeData();
-    watchExcludeKeywords();
+    watchTimeSettings();
     ensureButton();
     ensureSearchBox();
     ensureSelectedSummary();

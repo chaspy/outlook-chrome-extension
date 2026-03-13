@@ -46,6 +46,20 @@
     </section>
 
     <section class="panel">
+      <h2>ミーティング時間: 勤務時間</h2>
+      <p>この範囲外の予定は集計から除外されます。</p>
+      <div class="inline-fields">
+        <input id="work-start" type="number" min="0" max="23" value="9" /> 時 〜
+        <input id="work-end" type="number" min="1" max="24" value="18" /> 時
+      </div>
+      <div class="actions">
+        <button id="work-hours-save" type="button">保存</button>
+        <button id="work-hours-reset" type="button">リセット (9-18)</button>
+      </div>
+      <div class="status" id="work-hours-status"></div>
+    </section>
+
+    <section class="panel">
       <h2>Debug</h2>
       <div class="actions">
         <button id="refresh" type="button">取得</button>

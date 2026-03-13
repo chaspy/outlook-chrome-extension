@@ -87,3 +87,21 @@ input[type="text"] {
   font-size: 11px;
   color: #605e5c;
 }
+
+.inline-fields {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.inline-fields input[type="number"] {
+  width: 50px;
+  padding: 4px 6px;
+  border: 1px solid #c9c3b8;
+  border-radius: 6px;
+  background: #fffefc;
+  font-size: 12px;
+  text-align: center;
+}

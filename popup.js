@@ -9,10 +9,16 @@ const contactsStatus = document.getElementById("contacts-status");
 const contactsCount = document.getElementById("contacts-count");
 const CONTACTS_STORAGE_KEY = "oceContacts";
 const EXCLUDE_KEYWORDS_KEY = "oceMeetingExcludeKeywords";
+const WORK_HOURS_KEY = "oceMeetingWorkHours";
 const excludeInput = document.getElementById("exclude-keywords-input");
 const excludeSaveButton = document.getElementById("exclude-keywords-save");
 const excludeClearButton = document.getElementById("exclude-keywords-clear");
 const excludeStatus = document.getElementById("exclude-keywords-status");
+const workStartInput = document.getElementById("work-start");
+const workEndInput = document.getElementById("work-end");
+const workHoursSaveButton = document.getElementById("work-hours-save");
+const workHoursResetButton = document.getElementById("work-hours-reset");
+const workHoursStatus = document.getElementById("work-hours-status");
 
 const setStatus = (text) => {
   statusEl.textContent = text;
@@ -319,6 +325,46 @@ excludeClearButton.addEventListener("click", () => {
   });
 });
 
+const loadWorkHours = () => {
+  if (!chrome?.storage?.local) return;
+  chrome.storage.local.get(WORK_HOURS_KEY, (result) => {
+    const wh = result[WORK_HOURS_KEY];
+    if (wh) {
+      workStartInput.value = wh.start ?? 9;
+      workEndInput.value = wh.end ?? 18;
+    }
+  });
+};
+
+workHoursSaveButton.addEventListener("click", () => {
+  const start = Number.parseInt(workStartInput.value, 10);
+  const end = Number.parseInt(workEndInput.value, 10);
+  if (Number.isNaN(start) || Number.isNaN(end) || start >= end) {
+    workHoursStatus.textContent = "開始 < 終了 で入力してください。";
+    return;
+  }
+  if (!chrome?.storage?.local) {
+    workHoursStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.set({ [WORK_HOURS_KEY]: { start, end } }, () => {
+    workHoursStatus.textContent = `保存しました (${start}:00〜${end}:00)`;
+  });
+});
+
+workHoursResetButton.addEventListener("click", () => {
+  workStartInput.value = 9;
+  workEndInput.value = 18;
+  if (!chrome?.storage?.local) {
+    workHoursStatus.textContent = "保存先が利用できません。";
+    return;
+  }
+  chrome.storage.local.remove(WORK_HOURS_KEY, () => {
+    workHoursStatus.textContent = "リセットしました (9:00〜18:00)";
+  });
+});
+
 loadContactsCount();
 loadExcludeKeywords();
+loadWorkHours();
 void fetchDebugInfo();
