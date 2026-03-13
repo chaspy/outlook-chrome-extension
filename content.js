@@ -2005,7 +2005,34 @@
       suggestionCount: findSuggestionItems().length,
       iframeCount: iframes.length,
       iframes,
-      userAgent: navigator.userAgent
+      userAgent: navigator.userAgent,
+      timeInsights: (() => {
+        const allEvents = collectEvents();
+        const diagnostics = allEvents.slice(0, 10).map((el) => {
+          const label = getAriaLabel(el);
+          const inTemplate = !!el.closest(".templateColumnContent");
+          const timeRange = extractTimeRange(label);
+          const date = extractDate(label);
+          const status = extractStatus(label);
+          return {
+            label: label.slice(0, 200),
+            inTemplate,
+            hasTimeRange: !!timeRange,
+            timeRange: timeRange || null,
+            hasDate: !!date,
+            status,
+            isIgnorable: IGNORE_LABEL_PATTERNS.some((p) => p.test(label)),
+            statusIgnored: IGNORE_STATUS_FOR_TIME.some((p) => p.test(status)),
+            calitemid: el.dataset.calitemid || null
+          };
+        });
+        return {
+          totalEvents: allEvents.length,
+          meetingEvents: allEvents.filter(isMeetingForTimeCalc).length,
+          storedData: state.meetingTimeData,
+          eventDiagnostics: diagnostics
+        };
+      })()
     };
   };
 
