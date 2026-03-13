@@ -244,7 +244,7 @@
     for (let i = segments.length - 1; i >= 0; i -= 1) {
       if (KNOWN_STATUSES.has(segments[i])) return segments[i];
     }
-    return segments.length > 0 ? segments[segments.length - 1] : "";
+    return segments.length > 0 ? segments.at(-1) : "";
   };
 
   const isAllDayEvent = (el) => !el.closest(".templateColumnContent");
