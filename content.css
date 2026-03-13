@@ -370,11 +370,11 @@
 }
 
 .oce-time-counted {
-  outline: 2px solid #0078d4;
-  outline-offset: 1px;
-  box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.2);
-  z-index: 1;
-  position: relative;
+  outline: 3px solid #0078d4 !important;
+  outline-offset: 1px !important;
+  box-shadow: 0 0 0 4px rgba(0, 120, 212, 0.3) !important;
+  z-index: 1 !important;
+  position: relative !important;
 }
 
 .oce-time-bars {

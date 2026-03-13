@@ -516,6 +516,7 @@
     clearTimeHighlights();
     const events = collectEvents().filter(isMeetingForTimeCalc);
     const seenIds = new Set();
+    let count = 0;
     for (const el of events) {
       const calItemId = el.dataset.calitemid;
       if (calItemId && seenIds.has(calItemId)) continue;
@@ -526,8 +527,10 @@
       const weekKey = formatWeekKey(getWeekMonday(date));
       if (weekKey === targetWeekKey) {
         el.classList.add(TIME_HIGHLIGHT_CLASS);
+        count += 1;
       }
     }
+    return count;
   };
 
   const toggleTimeHighlight = () => {
@@ -651,12 +654,14 @@
       hours.textContent = `${week.total}h (${weekPct}%)`;
       row.appendChild(hours);
 
-      row.style.cursor = "pointer";
+      row.style.cursor = "default";
       row.addEventListener("mouseenter", () => {
-        applyTimeHighlights(key);
+        const highlighted = applyTimeHighlights(key);
+        row.title = `${highlighted}件のイベントをハイライト中`;
       });
       row.addEventListener("mouseleave", () => {
         clearTimeHighlights();
+        row.title = "";
       });
 
       bars.appendChild(row);
