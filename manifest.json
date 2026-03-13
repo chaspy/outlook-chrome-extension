@@ -32,6 +32,15 @@
       "run_at": "document_idle"
     }
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "reload-extension": {
+      "suggested_key": { "default": "Ctrl+Shift+U", "mac": "Command+Shift+U" },
+      "description": "Reload this extension"
+    }
+  },
   "action": {
     "default_title": "Detect Conflicts",
     "default_popup": "popup.html"

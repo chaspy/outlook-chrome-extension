@@ -46,17 +46,53 @@
     </section>
 
     <section class="panel">
+      <h2>ミーティング時間: 会議室除外</h2>
+      <p>会議室メールのドメイン。出席者が自分と会議室のみの予定を除外します。</p>
+      <input
+        id="room-email-domain-input"
+        type="text"
+        placeholder="例: @room.example.com"
+        spellcheck="false"
+      />
+      <div class="actions">
+        <button id="room-email-domain-save" type="button">保存</button>
+        <button id="room-email-domain-clear" type="button">クリア</button>
+      </div>
+      <div class="status" id="room-email-domain-status"></div>
+    </section>
+
+    <section class="panel">
       <h2>ミーティング時間: 勤務時間</h2>
       <p>この範囲外の予定は集計から除外されます。</p>
       <div class="inline-fields">
         <input id="work-start" type="number" min="0" max="23" value="9" /> 時 〜
         <input id="work-end" type="number" min="1" max="24" value="18" /> 時
+        　昼休み <input id="work-lunch" type="number" min="0" max="120" value="60" /> 分
       </div>
       <div class="actions">
         <button id="work-hours-save" type="button">保存</button>
         <button id="work-hours-reset" type="button">リセット (9-18)</button>
       </div>
       <div class="status" id="work-hours-status"></div>
+    </section>
+
+    <section class="panel">
+      <h2>ミーティング時間: 色の閾値 (%)</h2>
+      <p>割合に応じた色分けの閾値を設定します。</p>
+      <div class="inline-fields">
+        〜<input id="threshold-low" type="number" min="0" max="100" value="50" />%
+        <span class="threshold-swatch" style="color:#107c10">■</span>
+        〜<input id="threshold-mid" type="number" min="0" max="100" value="70" />%
+        <span class="threshold-swatch" style="color:#ca5010">■</span>
+        〜<input id="threshold-high" type="number" min="0" max="100" value="90" />%
+        <span class="threshold-swatch" style="color:#d13438">■</span>
+        超 <span class="threshold-swatch" style="color:#3b0a0a">■</span>
+      </div>
+      <div class="actions">
+        <button id="threshold-save" type="button">保存</button>
+        <button id="threshold-reset" type="button">リセット</button>
+      </div>
+      <div class="status" id="threshold-status"></div>
     </section>
 
     <section class="panel">

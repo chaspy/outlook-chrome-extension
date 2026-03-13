@@ -348,7 +348,33 @@
 
 .oce-time-current {
   font-size: 13px;
-  color: #0078d4;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.oce-time-current[data-level="low"] { color: #107c10; }
+.oce-time-current[data-level="mid"] { color: #ca5010; }
+.oce-time-current[data-level="high"] { color: #d13438; }
+.oce-time-current[data-level="critical"] { color: #3b0a0a; text-shadow: 0 0 6px rgba(180, 0, 0, 0.5); }
+
+.oce-time-current:hover {
+  background: #f3f2f1;
+}
+
+.oce-time-current[data-active="true"] {
+  background: #323130;
+  color: #fff !important;
+}
+
+.oce-time-counted {
+  outline: 2px solid #0078d4;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.2);
+  z-index: 1;
+  position: relative;
 }
 
 .oce-time-bars {
@@ -369,7 +395,7 @@
   font-weight: 600;
 }
 
-.oce-time-bar-row[data-current="true"] .oce-time-bar-track {
+.oce-time-bar-row[data-current="true"] .oce-time-bar-track-wrapper {
   outline: 1.5px solid #0078d4;
   outline-offset: 1px;
   border-radius: 4px;
@@ -381,9 +407,14 @@
   color: #605e5c;
 }
 
-.oce-time-bar-track {
+.oce-time-bar-track-wrapper {
   flex: 1;
   height: 14px;
+  background: transparent;
+}
+
+.oce-time-bar-track {
+  height: 100%;
   background: #f3f2f1;
   border-radius: 3px;
   overflow: hidden;
@@ -401,9 +432,27 @@
 }
 
 .oce-time-bar-hours {
-  min-width: 36px;
+  min-width: 80px;
   text-align: right;
-  color: #605e5c;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.oce-time-bar-hours[data-level="low"] {
+  color: #107c10;
+}
+
+.oce-time-bar-hours[data-level="mid"] {
+  color: #ca5010;
+}
+
+.oce-time-bar-hours[data-level="high"] {
+  color: #d13438;
+}
+
+.oce-time-bar-hours[data-level="critical"] {
+  color: #3b0a0a;
+  text-shadow: 0 0 6px rgba(180, 0, 0, 0.5);
 }
 
 .oce-time-legend {

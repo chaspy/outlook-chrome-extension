@@ -41,14 +41,19 @@
     "カレンダー"
   ]);
   const TIME_INSIGHTS_ID = "oce-time-insights";
+  const TIME_HIGHLIGHT_CLASS = "oce-time-counted";
   const TIME_STORAGE_KEY = "oceMeetingTime";
   const EXCLUDE_KEYWORDS_KEY = "oceMeetingExcludeKeywords";
   const WORK_HOURS_KEY = "oceMeetingWorkHours";
+  const ROOM_EMAIL_DOMAIN_KEY = "oceRoomEmailDomain";
+  const COLOR_THRESHOLDS_KEY = "oceColorThresholds";
+  const DEFAULT_THRESHOLDS = { low: 50, mid: 70, high: 90 };
   const DEFAULT_WORK_START = 9;
   const DEFAULT_WORK_END = 18;
+  const DEFAULT_LUNCH_MINUTES = 60;
   const IGNORE_STATUS_FOR_TIME = [
     /\bFree\b/i, /\b空き\b/, /\b空き時間\b/,
-    /\bOut of Office\b/i, /\b外出中\b/
+    /\bOut of Office\b/i, /\bOOF\b/, /\b外出中\b/
   ];
   const TIME_RANGE_PATTERNS = [
     /(\d{1,2}:\d{2}\s*[AP]M)\s+to\s+(\d{1,2}:\d{2}\s*[AP]M)/i,
@@ -57,16 +62,24 @@
   ];
   const DATE_PATTERNS_EN = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\b/i;
   const DATE_PATTERNS_JA = /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/;
+  // Outlook statuses:
+  //   Busy (取り込み中/予定あり) - confirmed, time blocked
+  //   Free (空き時間/空き) - available, not blocked
+  //   Tentative (仮の予定) - not yet confirmed
+  //   Working Elsewhere (他の場所で仕事中/他の場所で作業) - remote/offsite
+  //   Out of Office / OOF (外出中) - away, vacation
   const KNOWN_STATUSES = new Set([
-    "Busy", "Free", "Tentative", "Out of Office", "Working Elsewhere",
-    "予定あり", "空き", "空き時間", "仮の予定", "外出中", "他の場所で作業"
+    "Busy", "Free", "Tentative", "Out of Office", "OOF", "Working Elsewhere",
+    "予定あり", "取り込み中", "空き", "空き時間", "仮の予定",
+    "外出中", "他の場所で仕事中", "他の場所で作業"
   ]);
   const WORK_DAYS_PER_WEEK = 5;
   const MONTH_NAMES = {
     january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
     july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
   };
-  const MAX_WEEKS_STORED = 8;
+  const WEEKS_BEFORE_CURRENT = 2;
+  const WEEKS_AFTER_CURRENT = 2;
 
   const ATTENDEE_AUTOFILL_ATTR = "data-oce-attendees-filled";
   const ATTENDEE_AUTOFILLING_ATTR = "data-oce-attendees-filling";
@@ -103,6 +116,10 @@
     meetingExcludeKeywords: [],
     meetingWorkStart: DEFAULT_WORK_START,
     meetingWorkEnd: DEFAULT_WORK_END,
+    lunchMinutes: DEFAULT_LUNCH_MINUTES,
+    roomEmailDomain: "",
+    colorThresholds: { ...DEFAULT_THRESHOLDS },
+    timeHighlightActive: false,
     lastTimeItemIds: ""
   };
 
@@ -276,14 +293,32 @@
     if (!timeRange) return null;
     const date = extractDate(label);
     if (!date) return null;
-    const duration = getDurationHours(timeRange.startStr, timeRange.endStr);
-    if (duration <= 0) return null;
-    return { date, duration, recurring: isRecurringEvent(el) };
+    const startMin = parseTimeToMinutes(timeRange.startStr);
+    const endMin = parseTimeToMinutes(timeRange.endStr);
+    if (startMin === null || endMin === null) return null;
+    const workStartMin = state.meetingWorkStart * 60;
+    const workEndMin = state.meetingWorkEnd * 60;
+    const clampedStart = Math.max(startMin, workStartMin);
+    const clampedEnd = Math.min(endMin, workEndMin);
+    if (clampedEnd <= clampedStart) return null;
+    return { date, start: clampedStart, end: clampedEnd, recurring: isRecurringEvent(el) };
   };
 
-  const OOF_STATUS_PATTERNS = [/\bOut of Office\b/i, /\b外出中\b/];
+  const OOF_STATUS_PATTERNS = [/\bOut of Office\b/i, /\bOOF\b/, /\b外出中\b/];
+  // All-day events with these titles are treated as OOF regardless of status
+  // (e.g. "Japan holidays" calendar events default to Busy)
+  const HOLIDAY_TITLE_PATTERNS = [/^祝日$/, /^Holiday$/i];
 
   const isOofStatus = (status) => OOF_STATUS_PATTERNS.some((p) => p.test(status));
+
+  const extractAllDayTitle = (label) => label.split("、")[0].trim();
+
+  const isHolidayTitle = (label) => {
+    const title = extractAllDayTitle(label);
+    return HOLIDAY_TITLE_PATTERNS.some((p) => p.test(title));
+  };
+
+  const isOofDay = (label) => isOofStatus(extractStatus(label)) || isHolidayTitle(label);
 
   const collectOofDays = () => {
     const allEvents = collectEvents();
@@ -291,8 +326,7 @@
     for (const el of allEvents) {
       if (!isAllDayEvent(el)) continue;
       const label = getAriaLabel(el);
-      const status = extractStatus(label);
-      if (!isOofStatus(status)) continue;
+      if (!isOofDay(label)) continue;
       const date = extractDate(label);
       if (!date) continue;
       const day = date.getDay();
@@ -308,30 +342,65 @@
     return result;
   };
 
-  const addEventToWeek = (weeks, weekKey, duration, recurring) => {
-    if (!weeks[weekKey]) weeks[weekKey] = { total: 0, recurring: 0, oneTime: 0, count: 0, oofDays: 0 };
-    weeks[weekKey].total += duration;
-    weeks[weekKey].count += 1;
-    if (recurring) {
-      weeks[weekKey].recurring += duration;
-    } else {
-      weeks[weekKey].oneTime += duration;
+  const mergeTimeIntervals = (intervals) => {
+    if (intervals.length === 0) return [];
+    const sorted = intervals.map(([s, e]) => [s, e]).sort((a, b) => a[0] - b[0]);
+    const merged = [[sorted[0][0], sorted[0][1]]];
+    for (let i = 1; i < sorted.length; i += 1) {
+      const last = merged[merged.length - 1];
+      if (sorted[i][0] < last[1]) {
+        last[1] = Math.max(last[1], sorted[i][1]);
+      } else {
+        merged.push([sorted[i][0], sorted[i][1]]);
+      }
     }
+    return merged;
   };
 
-  const collectMeetingData = () => {
-    const events = collectEvents().filter(isMeetingForTimeCalc);
-    const weeks = {};
+  const collectDayIntervals = (events) => {
     const seenIds = new Set();
+    const dayIntervals = {};
     for (const el of events) {
       const calItemId = el.dataset.calitemid;
       if (calItemId && seenIds.has(calItemId)) continue;
       if (calItemId) seenIds.add(calItemId);
       const entry = parseEventEntry(el);
       if (!entry) continue;
-      const weekKey = formatWeekKey(getWeekMonday(entry.date));
-      addEventToWeek(weeks, weekKey, entry.duration, entry.recurring);
+      const dateKey = formatWeekKey(entry.date);
+      if (!dayIntervals[dateKey]) dayIntervals[dateKey] = [];
+      dayIntervals[dateKey].push({ start: entry.start, end: entry.end, recurring: entry.recurring });
     }
+    return dayIntervals;
+  };
+
+  const aggregateDayToWeeks = (dayIntervals) => {
+    const weeks = {};
+    for (const [dateKey, intervals] of Object.entries(dayIntervals)) {
+      const date = new Date(dateKey);
+      const weekKey = formatWeekKey(getWeekMonday(date));
+
+      const merged = mergeTimeIntervals(intervals.map((i) => [i.start, i.end]));
+      const total = merged.reduce((sum, [s, e]) => sum + (e - s), 0) / 60;
+
+      const rawRecurring = intervals.filter((i) => i.recurring).reduce((sum, i) => sum + (i.end - i.start), 0) / 60;
+      const rawOneTime = intervals.filter((i) => !i.recurring).reduce((sum, i) => sum + (i.end - i.start), 0) / 60;
+      const rawTotal = rawRecurring + rawOneTime;
+      const scale = rawTotal > 0 ? total / rawTotal : 0;
+
+      if (!weeks[weekKey]) weeks[weekKey] = { total: 0, recurring: 0, oneTime: 0, count: 0, oofDays: 0 };
+      weeks[weekKey].total += total;
+      weeks[weekKey].recurring += rawRecurring * scale;
+      weeks[weekKey].oneTime += rawOneTime * scale;
+      weeks[weekKey].count += intervals.length;
+    }
+    return weeks;
+  };
+
+  const collectMeetingData = () => {
+    const events = collectEvents().filter(isMeetingForTimeCalc);
+    const dayIntervals = collectDayIntervals(events);
+    const weeks = aggregateDayToWeeks(dayIntervals);
+
     const oofDays = collectOofDays();
     for (const key of Object.keys(weeks)) {
       weeks[key].total = Math.round(weeks[key].total * 10) / 10;
@@ -347,10 +416,18 @@
     for (const [key, value] of Object.entries(newWeekData)) {
       merged[key] = value;
     }
-    const keys = Object.keys(merged).sort((a, b) => a.localeCompare(b)).reverse();
+    const currentMonday = getWeekMonday(new Date());
+    const minDate = new Date(currentMonday);
+    minDate.setDate(minDate.getDate() - WEEKS_BEFORE_CURRENT * 7);
+    const maxDate = new Date(currentMonday);
+    maxDate.setDate(maxDate.getDate() + WEEKS_AFTER_CURRENT * 7);
+    const minKey = formatWeekKey(minDate);
+    const maxKey = formatWeekKey(maxDate);
     const pruned = {};
-    for (let i = 0; i < Math.min(keys.length, MAX_WEEKS_STORED); i += 1) {
-      pruned[keys[i]] = merged[keys[i]];
+    for (const key of Object.keys(merged)) {
+      if (key >= minKey && key <= maxKey) {
+        pruned[key] = merged[key];
+      }
     }
     state.meetingTimeData = pruned;
     if (chrome?.storage?.local) {
@@ -364,7 +441,7 @@
 
   const loadMeetingTimeData = () => {
     if (!chrome?.storage?.local) return;
-    chrome.storage.local.get([TIME_STORAGE_KEY, EXCLUDE_KEYWORDS_KEY, WORK_HOURS_KEY], (result) => {
+    chrome.storage.local.get([TIME_STORAGE_KEY, EXCLUDE_KEYWORDS_KEY, WORK_HOURS_KEY, ROOM_EMAIL_DOMAIN_KEY, COLOR_THRESHOLDS_KEY], (result) => {
       if (result[TIME_STORAGE_KEY]) {
         state.meetingTimeData = result[TIME_STORAGE_KEY];
       }
@@ -374,6 +451,13 @@
       if (result[WORK_HOURS_KEY]) {
         state.meetingWorkStart = result[WORK_HOURS_KEY].start ?? DEFAULT_WORK_START;
         state.meetingWorkEnd = result[WORK_HOURS_KEY].end ?? DEFAULT_WORK_END;
+        state.lunchMinutes = result[WORK_HOURS_KEY].lunch ?? DEFAULT_LUNCH_MINUTES;
+      }
+      if (result[ROOM_EMAIL_DOMAIN_KEY]) {
+        state.roomEmailDomain = result[ROOM_EMAIL_DOMAIN_KEY];
+      }
+      if (result[COLOR_THRESHOLDS_KEY]) {
+        state.colorThresholds = { ...DEFAULT_THRESHOLDS, ...result[COLOR_THRESHOLDS_KEY] };
       }
     });
   };
@@ -392,6 +476,15 @@
         const wh = changes[WORK_HOURS_KEY].newValue;
         state.meetingWorkStart = wh?.start ?? DEFAULT_WORK_START;
         state.meetingWorkEnd = wh?.end ?? DEFAULT_WORK_END;
+        state.lunchMinutes = wh?.lunch ?? DEFAULT_LUNCH_MINUTES;
+        needsUpdate = true;
+      }
+      if (changes[ROOM_EMAIL_DOMAIN_KEY]) {
+        state.roomEmailDomain = changes[ROOM_EMAIL_DOMAIN_KEY].newValue || "";
+        needsUpdate = true;
+      }
+      if (changes[COLOR_THRESHOLDS_KEY]) {
+        state.colorThresholds = { ...DEFAULT_THRESHOLDS, ...changes[COLOR_THRESHOLDS_KEY].newValue };
         needsUpdate = true;
       }
       if (needsUpdate) {
@@ -402,7 +495,7 @@
   };
 
   const getWeekCapacity = (weekData) => {
-    const hoursPerDay = state.meetingWorkEnd - state.meetingWorkStart;
+    const hoursPerDay = state.meetingWorkEnd - state.meetingWorkStart - state.lunchMinutes / 60;
     const days = WORK_DAYS_PER_WEEK - (weekData?.oofDays || 0);
     return hoursPerDay * Math.max(days, 1);
   };
@@ -410,6 +503,53 @@
   const formatWeekLabel = (weekKey) => {
     const parts = weekKey.split("-");
     return `${Number.parseInt(parts[1], 10)}/${Number.parseInt(parts[2], 10)}`;
+  };
+
+  const clearTimeHighlights = () => {
+    document.querySelectorAll(`.${TIME_HIGHLIGHT_CLASS}`).forEach((el) => {
+      el.classList.remove(TIME_HIGHLIGHT_CLASS);
+    });
+  };
+
+  const applyTimeHighlights = () => {
+    clearTimeHighlights();
+    const events = collectEvents().filter(isMeetingForTimeCalc);
+    const today = new Date();
+    const currentWeekKey = formatWeekKey(getWeekMonday(today));
+    const seenIds = new Set();
+    for (const el of events) {
+      const calItemId = el.dataset.calitemid;
+      if (calItemId && seenIds.has(calItemId)) continue;
+      if (calItemId) seenIds.add(calItemId);
+      const label = getAriaLabel(el);
+      const date = extractDate(label);
+      if (!date) continue;
+      const weekKey = formatWeekKey(getWeekMonday(date));
+      if (weekKey === currentWeekKey) {
+        el.classList.add(TIME_HIGHLIGHT_CLASS);
+      }
+    }
+  };
+
+  const toggleTimeHighlight = () => {
+    state.timeHighlightActive = !state.timeHighlightActive;
+    if (state.timeHighlightActive) {
+      applyTimeHighlights();
+    } else {
+      clearTimeHighlights();
+    }
+    const header = document.querySelector(".oce-time-current");
+    if (header) {
+      header.dataset.active = String(state.timeHighlightActive);
+    }
+  };
+
+  const getPctLevel = (pct) => {
+    const t = state.colorThresholds;
+    if (pct <= t.low) return "low";
+    if (pct <= t.mid) return "mid";
+    if (pct <= t.high) return "high";
+    return "critical";
   };
 
   const ensureTimeInsights = () => {
@@ -455,16 +595,22 @@
       const current = document.createElement("span");
       current.className = "oce-time-current";
       current.textContent = `今週: ${currentData.total}h (${pct}%)`;
+      current.title = "クリックで対象予定をハイライト";
+      current.dataset.level = getPctLevel(pct);
+      current.dataset.active = String(state.timeHighlightActive);
+      current.addEventListener("click", toggleTimeHighlight);
       header.appendChild(current);
     }
     container.appendChild(header);
 
-    const maxTotal = Math.max(...keys.map((k) => data[k].total), 1);
+    const defaultCapacity = (state.meetingWorkEnd - state.meetingWorkStart) * WORK_DAYS_PER_WEEK;
+    const maxScale = Math.max(defaultCapacity, ...keys.map((k) => data[k].total), 1);
 
     const bars = document.createElement("div");
     bars.className = "oce-time-bars";
     for (const key of keys) {
       const week = data[key];
+      const capacity = getWeekCapacity(week);
       const row = document.createElement("div");
       row.className = "oce-time-bar-row";
       if (key === currentWeekKey) row.dataset.current = "true";
@@ -474,11 +620,17 @@
       label.textContent = formatWeekLabel(key);
       row.appendChild(label);
 
+      const trackWrapper = document.createElement("div");
+      trackWrapper.className = "oce-time-bar-track-wrapper";
+
       const track = document.createElement("div");
       track.className = "oce-time-bar-track";
+      const capacityPct = (capacity / maxScale) * 100;
+      track.style.width = `${capacityPct}%`;
 
-      const recurPct = (week.recurring / maxTotal) * 100;
-      const oneTimePct = (week.oneTime / maxTotal) * 100;
+      const safeCapacity = Math.max(capacity, 0.1);
+      const recurPct = Math.min((week.recurring / safeCapacity) * 100, 100);
+      const oneTimePct = Math.min((week.oneTime / safeCapacity) * 100, 100 - recurPct);
 
       const recurBar = document.createElement("div");
       recurBar.className = "oce-time-bar-recurring";
@@ -490,11 +642,13 @@
       oneTimeBar.style.width = `${oneTimePct}%`;
       track.appendChild(oneTimeBar);
 
-      row.appendChild(track);
+      trackWrapper.appendChild(track);
+      row.appendChild(trackWrapper);
 
-      const weekPct = Math.round((week.total / getWeekCapacity(week)) * 100);
+      const weekPct = Math.round((week.total / capacity) * 100);
       const hours = document.createElement("span");
       hours.className = "oce-time-bar-hours";
+      hours.dataset.level = getPctLevel(weekPct);
       hours.textContent = `${week.total}h (${weekPct}%)`;
       row.appendChild(hours);
 
@@ -538,10 +692,14 @@
 
     const newData = collectMeetingData();
     saveMeetingTimeData(newData);
-    if (globalThis.requestAnimationFrame) {
-      globalThis.requestAnimationFrame(renderTimeInsights);
-    } else {
+    const afterRender = () => {
       renderTimeInsights();
+      if (state.timeHighlightActive) applyTimeHighlights();
+    };
+    if (globalThis.requestAnimationFrame) {
+      globalThis.requestAnimationFrame(afterRender);
+    } else {
+      afterRender();
     }
   };
 
@@ -2097,11 +2255,46 @@
             recurring: isRecurringEvent(el)
           };
         });
+        const allDayEvents = allEvents.filter(isAllDayEvent);
+        const allDaySamples = allDayEvents.slice(0, 5).map((el) => {
+          const label = getAriaLabel(el);
+          const childTitle = el.querySelector("[title]");
+          const parentLabel = el.parentElement ? (el.parentElement.getAttribute("aria-label") || "") : "";
+          return {
+            ariaLabel: label.slice(0, 120),
+            parentAriaLabel: parentLabel.slice(0, 120),
+            innerText: (el.innerText || "").slice(0, 120),
+            childTitle: childTitle ? childTitle.getAttribute("title").slice(0, 120) : "",
+            attrs: [...el.attributes].map((a) => `${a.name}=${a.value.slice(0, 60)}`),
+            status: extractStatus(label),
+            date: (() => { const d = extractDate(label); return d ? formatWeekKey(d) : ""; })(),
+            isOof: isOofDay(label)
+          };
+        });
+        const eventDomSamples = meetingEvents.slice(0, 5).map((el) => {
+          const attrs = [...el.attributes].map((a) => `${a.name}=${a.value.slice(0, 60)}`);
+          const children = [...el.children].map((c) => ({
+            tag: c.tagName,
+            className: (c.className || "").slice(0, 60),
+            text: (c.textContent || "").slice(0, 80),
+            title: c.getAttribute("title") || ""
+          }));
+          return {
+            ariaLabel: (el.getAttribute("aria-label") || "").slice(0, 120),
+            attrs,
+            innerText: (el.innerText || "").slice(0, 120),
+            childCount: el.children.length,
+            children: children.slice(0, 5)
+          };
+        });
         return {
           totalEvents: allEvents.length,
           meetingEvents: meetingEvents.length,
           storedData: state.meetingTimeData,
-          countedEvents: counted
+          roomEmailDomain: state.roomEmailDomain,
+          countedEvents: counted,
+          allDayEvents: allDaySamples,
+          eventDomSamples
         };
       })()
     };
