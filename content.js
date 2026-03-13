@@ -281,8 +281,35 @@
     return { date, duration, recurring: isRecurringEvent(el) };
   };
 
+  const OOF_STATUS_PATTERNS = [/\bOut of Office\b/i, /\b外出中\b/];
+
+  const isOofStatus = (status) => OOF_STATUS_PATTERNS.some((p) => p.test(status));
+
+  const collectOofDays = () => {
+    const allEvents = collectEvents();
+    const oofByWeek = {};
+    for (const el of allEvents) {
+      if (!isAllDayEvent(el)) continue;
+      const label = getAriaLabel(el);
+      const status = extractStatus(label);
+      if (!isOofStatus(status)) continue;
+      const date = extractDate(label);
+      if (!date) continue;
+      const day = date.getDay();
+      if (day === 0 || day === 6) continue;
+      const weekKey = formatWeekKey(getWeekMonday(date));
+      if (!oofByWeek[weekKey]) oofByWeek[weekKey] = new Set();
+      oofByWeek[weekKey].add(formatWeekKey(date));
+    }
+    const result = {};
+    for (const [weekKey, dates] of Object.entries(oofByWeek)) {
+      result[weekKey] = dates.size;
+    }
+    return result;
+  };
+
   const addEventToWeek = (weeks, weekKey, duration, recurring) => {
-    if (!weeks[weekKey]) weeks[weekKey] = { total: 0, recurring: 0, oneTime: 0, count: 0 };
+    if (!weeks[weekKey]) weeks[weekKey] = { total: 0, recurring: 0, oneTime: 0, count: 0, oofDays: 0 };
     weeks[weekKey].total += duration;
     weeks[weekKey].count += 1;
     if (recurring) {
@@ -305,10 +332,12 @@
       const weekKey = formatWeekKey(getWeekMonday(entry.date));
       addEventToWeek(weeks, weekKey, entry.duration, entry.recurring);
     }
+    const oofDays = collectOofDays();
     for (const key of Object.keys(weeks)) {
       weeks[key].total = Math.round(weeks[key].total * 10) / 10;
       weeks[key].recurring = Math.round(weeks[key].recurring * 10) / 10;
       weeks[key].oneTime = Math.round(weeks[key].oneTime * 10) / 10;
+      weeks[key].oofDays = oofDays[key] || 0;
     }
     return weeks;
   };
@@ -372,6 +401,12 @@
     });
   };
 
+  const getWeekCapacity = (weekData) => {
+    const hoursPerDay = state.meetingWorkEnd - state.meetingWorkStart;
+    const days = WORK_DAYS_PER_WEEK - (weekData?.oofDays || 0);
+    return hoursPerDay * Math.max(days, 1);
+  };
+
   const formatWeekLabel = (weekKey) => {
     const parts = weekKey.split("-");
     return `${Number.parseInt(parts[1], 10)}/${Number.parseInt(parts[2], 10)}`;
@@ -416,7 +451,7 @@
     title.textContent = "ミーティング時間";
     header.appendChild(title);
     if (currentData) {
-      const pct = Math.round((currentData.total / ((state.meetingWorkEnd - state.meetingWorkStart) * WORK_DAYS_PER_WEEK)) * 100);
+      const pct = Math.round((currentData.total / getWeekCapacity(currentData)) * 100);
       const current = document.createElement("span");
       current.className = "oce-time-current";
       current.textContent = `今週: ${currentData.total}h (${pct}%)`;
@@ -457,7 +492,7 @@
 
       row.appendChild(track);
 
-      const weekPct = Math.round((week.total / ((state.meetingWorkEnd - state.meetingWorkStart) * WORK_DAYS_PER_WEEK)) * 100);
+      const weekPct = Math.round((week.total / getWeekCapacity(week)) * 100);
       const hours = document.createElement("span");
       hours.className = "oce-time-bar-hours";
       hours.textContent = `${week.total}h (${weekPct}%)`;
