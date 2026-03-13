@@ -48,11 +48,15 @@
   ];
   const TIME_RANGE_PATTERNS = [
     /(\d{1,2}:\d{2}\s*[AP]M)\s+to\s+(\d{1,2}:\d{2}\s*[AP]M)/i,
-    /(\d{1,2}:\d{2})\s*[〜~\-–]\s*(\d{1,2}:\d{2})/,
+    /(\d{1,2}:\d{2})\s*(?:から|[〜~\-–])\s*(\d{1,2}:\d{2})/,
     /(\d{1,2}:\d{2}\s*[AP]M)\s*[〜~\-–]\s*(\d{1,2}:\d{2}\s*[AP]M)/i
   ];
   const DATE_PATTERNS_EN = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\b/i;
-  const DATE_PATTERNS_JA = /(\d{4})年(\d{1,2})月(\d{1,2})日/;
+  const DATE_PATTERNS_JA = /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/;
+  const KNOWN_STATUSES = new Set([
+    "Busy", "Free", "Tentative", "Out of Office", "Working Elsewhere",
+    "予定あり", "空き", "空き時間", "仮の予定", "外出中", "他の場所で作業"
+  ]);
   const MONTH_NAMES = {
     january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
     july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
@@ -206,6 +210,9 @@
 
   const extractStatus = (label) => {
     const segments = label.split(",").map((s) => s.trim());
+    for (let i = segments.length - 1; i >= 0; i -= 1) {
+      if (KNOWN_STATUSES.has(segments[i])) return segments[i];
+    }
     return segments.length > 0 ? segments[segments.length - 1] : "";
   };
 
