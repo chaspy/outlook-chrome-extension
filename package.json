@@ -17,7 +17,7 @@
     "c8": "^9.1.0",
     "eslint": "^8.57.0",
     "eslint-plugin-sonarjs": "^0.25.0",
-    "eslint-plugin-unicorn": "^50.0.0",
+    "eslint-plugin-unicorn": "^63.0.0",
     "node-fetch": "2.6.11",
     "web-ext": "^7.11.0"
   }
